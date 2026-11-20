@@ -44,7 +44,8 @@ def fixtures():
     for n in range(0, 60, 2):
         acts.append(f'{1000 + n},{D(n)},{D(n)} 18:00,Test Run,running,30,5,150,170,300,3.0,1.0,60,1,5,10,10,4')
     return {'data/food.csv': '\n'.join(food) + '\n', 'data/daily.csv': '\n'.join(daily) + '\n',
-            'data/weight.csv': '\n'.join(weight) + '\n', 'data/activities.csv': '\n'.join(acts) + '\n'}
+            'data/weight.csv': '\n'.join(weight) + '\n', 'data/activities.csv': '\n'.join(acts) + '\n',
+            'data/ai_summary.json': json.dumps({'generated_at': f'{TODAY.isoformat()}T13:44:00Z', 'stats': {'summary': 'Test stats summary.', 'recs': ['Eat more protein']}, 'health': {'summary': 'Test health summary.', 'recs': ['Sleep earlier']}})}
 
 
 class Repo:
@@ -225,6 +226,9 @@ async def main():
                     await p3.screenshot(path=f'{SHOTS}/{t}-{r}-{scheme}.png', full_page=True)
             await tab(p3, 'stats'); await p3.click('#rng button[data-r="30"]'); await p3.wait_for_timeout(200)
             check(await p3.locator('#insights').count() == 1, f'insights card shown ({scheme})')
+            check('Test stats summary.' in await p3.inner_text('.aicard'), f'AI card on Stats ({scheme})')
+            await tab(p3, 'health'); await p3.wait_for_timeout(300)
+            check('Test health summary.' in await p3.inner_text('.aicard') and '·' in await p3.inner_text('.aicard'), f'AI card on Health with update time ({scheme})')
             for t in ['today', 'add', 'more']:
                 await tab(p3, t); await p3.screenshot(path=f'{SHOTS}/{t}-{scheme}.png', full_page=True)
             check(not p3.errors, f'no script errors ({scheme})'); await c3.close()

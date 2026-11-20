@@ -80,7 +80,7 @@ function viewHealth() {
   const rangeDays = bk.flatMap(b => b.days);
   const avgOf = f => { const v = rangeDays.map(d => health[d] ? f(health[d]) : null).filter(x => x != null); return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null; };
   const wk = acts.filter(a => rangeDays.includes(a.date));
-  let html = `<div class="card">
+  let html = aiCard('health') + `<div class="card">
       <div class="spread"><b>Last night</b><span class="small muted">${esc(shortDay(last, true))}${L0.bed ? ` · ${esc(L0.bed)}–${esc(L0.wake)}` : ''}</span></div>
       <div class="spread" style="margin-top:6px"><div><div class="big">${L0.score ?? '–'}</div><div class="small muted">sleep score</div></div>
         <div style="text-align:right"><div style="font-size:22px;font-weight:650">${hm(L0.hrs)}</div><div class="small muted">deep ${hm(L0.deep)} · REM ${hm(L0.rem)}</div></div></div>

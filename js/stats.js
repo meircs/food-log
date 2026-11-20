@@ -5,12 +5,14 @@ let garmin = store.get('garmin', {});   // date -> {total, active}
 let weights = store.get('weights', []); // [{date, kg}]
 let health = store.get('health', {});   // date -> Garmin daily metrics
 let acts = store.get('acts', []);       // workouts, newest first
+let ai = store.get('ai', null);         // AI summary written each morning by the daily plan task
 async function pullGarmin(force) {
   if (!settings.ghToken || !navigator.onLine) return;
   if (!force && Date.now() - store.get('garminPulled', 0) < 10 * 60000) return;
   const dir = settings.ghPath.replace(/[^/]*$/, '');
   const read = async f => { const g = await gh('GET', null, dir + f); return g.ok ? parseCSV(b64ToText((await g.json()).content || '')) : null; };
   const [d, w, a] = await Promise.all([read('daily.csv'), read('weight.csv'), read('activities.csv')]);
+  try { const g = await gh('GET', null, dir + 'ai_summary.json'); if (g.ok) { ai = JSON.parse(b64ToText((await g.json()).content || '')); store.set('ai', ai); } } catch (e) { }
   if (d) { const h = d.shift(); const iD = h.indexOf('date'), iT = h.indexOf('total_kcal'), iA = h.indexOf('active_kcal');
     garmin = {}; d.forEach(r => { if (r[iD] && r[iT]) garmin[r[iD]] = { total: num(r[iT]), active: num(r[iA]) }; }); store.set('garmin', garmin);
     const F = { score: 'sleep_score', hrs: 'sleep_hours', deep: 'deep_h', light: 'light_h', rem: 'rem_h', awake: 'awake_h', hrv: 'hrv_last_night', hrvWk: 'hrv_weekly_avg',
@@ -36,6 +38,15 @@ async function pullGarmin(force) {
   if (state.tab === 'today' && !$('#bd')) render();
 }
 function mondayOf(d) { const [y, m, dd] = d.split('-').map(Number); const dow = new Date(y, m - 1, dd).getDay(); return addDays(d, -((dow + 6) % 7)); }
+function aiCard(section) {
+  const s = ai && ai[section];
+  if (!s || !s.summary) return `<div class="card aicard"><b>✦ AI summary</b><div class="small muted" style="margin-top:4px">${settings.ghToken ? 'Appears after the next morning analysis.' : 'Needs the sync token (More).'}</div></div>`;
+  const at = ai.generated_at ? new Date(ai.generated_at) : null;
+  const when = at && !isNaN(at) ? at.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  return `<div class="card aicard"><div class="spread"><b>✦ AI summary</b><span class="small muted">${esc(when)}</span></div>
+    <div style="margin-top:6px;line-height:1.45">${esc(s.summary)}</div>
+    ${(s.recs || []).length ? `<ul style="margin:8px 0 2px;padding-left:20px;line-height:1.45">${s.recs.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}</div>`;
+}
 const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 // Energy model: maintenance from Garmin burn, refined by intake vs weight trend once there's enough data.
 function targetModel() {
@@ -156,7 +167,7 @@ function viewStats() {
   let streak = 0; { const has = d => all.some(e => e.date === d); let i = has(todayStr()) ? 0 : 1; while (i < 500 && has(addDays(todayStr(), -i))) { streak++; i++; } }
   const tile = (label, val, sub) => `<div class="macro"><span class="small muted">${label}</span><b>${val}</b>${sub ? `<span class="small muted">${sub}</span>` : ''}</div>`;
   const doneN = done.filter(Boolean).length;
-  let html = `<div class="seg" id="rng"><button data-r="w">This week</button><button data-r="lw">Last week</button><button data-r="30">30 days</button></div>
+  let html = aiCard('stats') + `<div class="seg" id="rng"><button data-r="w">This week</button><button data-r="lw">Last week</button><button data-r="30">30 days</button></div>
     <div class="small muted" style="margin:6px 4px 0">${esc(shortDay(days[0], true))} – ${esc(shortDay(days[n - 1], true))}</div>
     <div class="macros" style="grid-template-columns:repeat(2,1fr)">
       ${tile('Avg eaten', aIn != null ? fmt(aIn) + ' kcal' : '–', `${doneN} full day${doneN === 1 ? '' : 's'} logged`)}
