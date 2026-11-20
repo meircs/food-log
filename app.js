@@ -465,6 +465,7 @@ async function pullGarmin(force) {
   if (state.tab === 'stats') viewStats();
   if (state.tab === 'health') viewHealth();
 }
+function mondayOf(d) { const [y, m, dd] = d.split('-').map(Number); const dow = new Date(y, m - 1, dd).getDay(); return addDays(d, -((dow + 6) % 7)); }
 function fmt(n) { return Math.round(n).toLocaleString(); }
 function shortDay(s, long) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, long ? { weekday: 'short', month: 'short', day: 'numeric' } : { weekday: 'narrow' }); }
 function topRounded(x, y, w, h, r) { r = Math.min(r, w / 2, h); return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; }
@@ -505,8 +506,11 @@ function lineChart({ pts, color, unit }) {
   return `<svg id="wchart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${g}</svg><div class="small muted" id="wchart-cap" style="min-height:20px;margin-top:4px">Tap a point for details</div>`;
 }
 function viewStats() {
-  const n = state.range || 7;
-  const days = Array.from({ length: n }, (_, i) => addDays(todayStr(), i - n + 1));
+  const rg = state.range || 'w';
+  const start = rg === 30 ? addDays(todayStr(), -29) : addDays(mondayOf(todayStr()), rg === 'lw' ? -7 : 0);
+  const n = rg === 30 ? 30 : 7;
+  const days = Array.from({ length: n }, (_, i) => addDays(start, i));
+  const rangeName = rg === 'w' ? 'this week' : rg === 'lw' ? 'last week' : '30 days';
   const all = [...entries, ...remote];
   const per = days.map(d => totals(all.filter(e => e.date === d)));
   const logged = per.map(t => t.kcal > 0);
@@ -522,7 +526,8 @@ function viewStats() {
   let streak = 0; { const has = d => all.some(e => e.date === d); let i = has(todayStr()) ? 0 : 1; while (i < 500 && has(addDays(todayStr(), -i))) { streak++; i++; } }
   const tile = (label, val, sub) => `<div class="macro"><span class="small muted">${label}</span><b>${val}</b>${sub ? `<span class="small muted">${sub}</span>` : ''}</div>`;
   const doneN = done.filter(Boolean).length;
-  let html = `<div class="seg" id="rng"><button data-r="7">7 days</button><button data-r="30">30 days</button></div>
+  let html = `<div class="seg" id="rng"><button data-r="w">This week</button><button data-r="lw">Last week</button><button data-r="30">30 days</button></div>
+    <div class="small muted" style="margin:6px 4px 0">${esc(shortDay(days[0], true))} – ${esc(shortDay(days[n - 1], true))}</div>
     <div class="macros" style="grid-template-columns:repeat(2,1fr)">
       ${tile('Avg eaten', aIn != null ? fmt(aIn) + ' kcal' : '–', `${doneN} full day${doneN === 1 ? '' : 's'} logged`)}
       ${tile('Avg burned (Garmin)', aOut != null ? fmt(aOut) + ' kcal' : '–', settings.ghToken ? '' : 'needs sync token')}
@@ -539,18 +544,19 @@ function viewStats() {
       ${barChart({ id: 'pchart', days, bars: per.map(t => t.p), target: settings.protein, color: 'var(--p)' })}</div>`;
   if (kT > 0) {
     const seg = [['Protein', kP, 'var(--p)', sumP], ['Carbs', kC, 'var(--c)', sumC], ['Fat', kF, 'var(--f)', sumF]];
-    html += `<div class="card"><b>Where calories come from</b> <span class="small muted">· ${n}-day average</span>
+    html += `<div class="card"><b>Where calories come from</b> <span class="small muted">· ${rangeName}</span>
       <div style="display:flex;gap:2px;height:16px;margin:12px 0 10px">${seg.map(([, k, c]) => `<div style="flex:${k};background:${c};border-radius:4px"></div>`).join('')}</div>
       <div class="macros" style="margin-top:0">${seg.map(([l, k, c, g]) => `<div class="macro"><span class="small muted"><i class="dot" style="background:${c}"></i>${l}</span><b>${r0(k / kT * 100)}%</b><span class="small muted">${r0(g / doneN)} g / day</span></div>`).join('')}</div></div>`;
   }
   if (supps.length) {
-    html += `<div class="card"><b>Supplements</b> <span class="small muted">· days taken, last ${n} days</span>` + supps.map(x => {
-      const k = days.filter(d => suppLog.some(l => l.date === d && l.suppId === x.id)).length;
-      return `<div style="margin-top:10px"><div class="spread small"><span>${esc(x.name)}</span><span class="muted">${k}/${n} days · ${r0(k / n * 100)}%</span></div>
-        <div class="bar" style="margin:4px 0 0"><i style="width:${k / n * 100}%;background:var(--p)"></i></div></div>`;
+    html += `<div class="card"><b>Supplements</b> <span class="small muted">· days taken, ${rangeName}</span>` + supps.map(x => {
+      const past = days.filter(d => d <= todayStr()), dn = Math.max(1, past.length);
+      const k = past.filter(d => suppLog.some(l => l.date === d && l.suppId === x.id)).length;
+      return `<div style="margin-top:10px"><div class="spread small"><span>${esc(x.name)}</span><span class="muted">${k}/${dn} days · ${r0(k / dn * 100)}%</span></div>
+        <div class="bar" style="margin:4px 0 0"><i style="width:${k / dn * 100}%;background:var(--p)"></i></div></div>`;
     }).join('') + `</div>`;
   }
-  const wr = weights.filter(w => w.date >= addDays(todayStr(), -Math.max(n, 30) + 1));
+  const wr = weights.filter(w => w.date >= addDays(todayStr(), -29));
   if (wr.length >= 2) {
     const ch = wr[wr.length - 1].kg - wr[0].kg;
     html += `<div class="card"><div class="spread"><b>Weight</b><span class="small muted">${ch > 0 ? '+' : ch < 0 ? '−' : '±'}${r1(Math.abs(ch))} kg since ${shortDay(wr[0].date, true)}</span></div>
@@ -558,13 +564,13 @@ function viewStats() {
   } else if (wr.length === 1) html += `<div class="card"><b>Weight</b><div class="small muted" style="margin-top:4px">${r1(wr[0].kg)} kg on ${shortDay(wr[0].date, true)}. The chart appears after two weigh-ins.</div></div>`;
   const top = {}; all.filter(e => days.includes(e.date)).forEach(e => { const k = e.name; top[k] = top[k] || { k: 0, n: 0 }; top[k].k += e.kcal; top[k].n++; });
   const tl = Object.entries(top).sort((a, b) => b[1].k - a[1].k).slice(0, 5);
-  if (tl.length) html += `<h2>Biggest calorie sources · ${n} days</h2><div class="list">${tl.map(([name, v]) => `<div class="item"><div class="grow"><div class="name">${esc(name)}</div><div class="small muted">${v.n}× · ${kT ? r0(v.k / Math.max(1, per.reduce((a, t) => a + t.kcal, 0)) * 100) : 0}% of calories</div></div><div class="kcal">${fmt(v.k)}</div></div>`).join('')}</div>`;
+  if (tl.length) html += `<h2>Biggest calorie sources · ${rangeName}</h2><div class="list">${tl.map(([name, v]) => `<div class="item"><div class="grow"><div class="name">${esc(name)}</div><div class="small muted">${v.n}× · ${kT ? r0(v.k / Math.max(1, per.reduce((a, t) => a + t.kcal, 0)) * 100) : 0}% of calories</div></div><div class="kcal">${fmt(v.k)}</div></div>`).join('')}</div>`;
   html += `<div class="small muted" style="margin:14px 4px">Averages use full days you logged food (today is left out until it's over). Garmin calories update after the morning sync.</div>`;
   $('#view').innerHTML = html;
-  $('#rng').querySelectorAll('button').forEach(b => { b.classList.toggle('on', +b.dataset.r === n); b.onclick = () => { state.range = +b.dataset.r; viewStats(); }; });
+  $('#rng').querySelectorAll('button').forEach(b => { const v = b.dataset.r === '30' ? 30 : b.dataset.r; b.classList.toggle('on', v === rg); b.onclick = () => { state.range = v; viewStats(); }; });
   const wire = (id, fn) => { const svg = $('#' + id); if (!svg) return; svg.querySelectorAll('.hit').forEach(h => h.onclick = () => {
     svg.querySelectorAll('.hit').forEach(x => x.setAttribute('fill', 'transparent')); h.setAttribute('fill', 'rgba(127,127,127,.12)'); $('#' + id + '-cap').innerHTML = fn(+h.dataset.i); }); };
-  wire('kchart', i => `<b style="color:var(--ink)">${shortDay(days[i], true)}</b> · eaten ${per[i].kcal ? fmt(per[i].kcal) : '–'}${burned[i] != null ? ` · burned ${fmt(burned[i])} · ${per[i].kcal ? (per[i].kcal - burned[i] > 0 ? '+' : '−') + fmt(Math.abs(per[i].kcal - burned[i])) : ''}` : days[i] === todayStr() ? ' · today, in progress' : ''}`);
+  wire('kchart', i => `<b style="color:var(--ink)">${shortDay(days[i], true)}</b> · eaten ${per[i].kcal ? fmt(per[i].kcal) : '–'}${burned[i] != null ? ` · burned ${fmt(burned[i])}${per[i].kcal ? ' · ' + (per[i].kcal - burned[i] > 0 ? '+' : '−') + fmt(Math.abs(per[i].kcal - burned[i])) : ''}` : days[i] === todayStr() ? ' · today, in progress' : days[i] > todayStr() ? ' · upcoming' : ''}`);
   wire('pchart', i => `<b style="color:var(--ink)">${shortDay(days[i], true)}</b> · ${per[i].p ? r0(per[i].p) + ' g protein' : 'nothing logged'}`);
   wire('wchart', i => `<b style="color:var(--ink)">${shortDay(wr[i].date, true)}</b> · ${r1(wr[i].kg)} kg`);
   pullGarmin(false);
@@ -575,7 +581,7 @@ function hBuckets(r) {
   const days = Array.from({ length: r }, (_, i) => addDays(todayStr(), i - r + 1));
   const md = d => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); };
   if (r <= 31) return days.map(d => ({ label: r <= 7 ? shortDay(d) : d.slice(8).replace(/^0/, ''), tip: shortDay(d, true), days: [d] }));
-  if (r <= 120) { const b = []; for (let i = days.length % 7; i < days.length; i += 7) { const ds = days.slice(i, i + 7); b.push({ label: md(ds[0]), tip: `Week of ${md(ds[0])}`, days: ds }); } return b; }
+  if (r <= 120) { const b = []; let w = mondayOf(days[0]); if (w < days[0]) w = addDays(w, 7); for (; w <= todayStr(); w = addDays(w, 7)) { const ds = Array.from({ length: 7 }, (_, k) => addDays(w, k)); b.push({ label: md(w), tip: `Week of ${md(w)} (Mon–Sun)`, days: ds }); } return b; }
   const by = {}; days.forEach(d => (by[d.slice(0, 7)] = by[d.slice(0, 7)] || []).push(d));
   return Object.entries(by).map(([k, ds]) => { const [y, m] = k.split('-').map(Number); const dt = new Date(y, m - 1, 1);
     return { label: dt.toLocaleDateString(undefined, { month: 'short' }), tip: dt.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }), days: ds }; });
@@ -682,9 +688,9 @@ function viewHealth() {
   html += `<div class="card"><b>Stress</b> <span class="small muted">· daily average (0–100)</span>${hLine({ id: 'hstress', buckets: bk, vals: sv('stress'), color: 'var(--c)' })}</div>`;
   // intensity minutes per week
   const nW = Math.min(52, Math.max(4, Math.ceil(r / 7)));
-  const weeks = Array.from({ length: nW }, (_, i) => { const end = addDays(todayStr(), -7 * (nW - 1 - i)); const ds = Array.from({ length: 7 }, (_, k) => addDays(end, k - 6));
-    const [y, m, d] = ds[0].split('-').map(Number); const lab = new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    return { label: lab, tip: `Week ending ${shortDay(end, true)}`, days: ds }; });
+  const weeks = Array.from({ length: nW }, (_, i) => { const mon = addDays(mondayOf(todayStr()), -7 * (nW - 1 - i)); const ds = Array.from({ length: 7 }, (_, k) => addDays(mon, k));
+    const [y, m, d] = mon.split('-').map(Number); const lab = new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return { label: lab, tip: `Week of ${lab} (Mon–Sun)${i === nW - 1 ? ', so far' : ''}`, days: ds }; });
   const imM = weeks.map(b => bSum(b, h => h.imMod)), imV = weeks.map(b => bSum(b, h => (h.imVig || 0) * 2));
   html += `<div class="card"><b>Intensity minutes</b> <span class="small muted">· per week, vigorous counts double</span>${leg([['Moderate', 'var(--sa)'], ['Vigorous ×2', 'var(--sd)'], ['150 min goal', 'var(--muted)', 'dash']])}
     ${hBars({ id: 'him', buckets: weeks, series: [{ name: 'Vigorous', color: 'var(--sd)', vals: imV }, { name: 'Moderate', color: 'var(--sa)', vals: imM }], target: 150 })}</div>`;
@@ -1121,7 +1127,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v15 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v16 · works offline</div>`;
   $('#gofoods').onclick = () => { state.tab = 'foods'; render(); window.scrollTo(0, 0); };
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
@@ -1165,7 +1171,7 @@ function viewMore() {
 
 // ---------- boot ----------
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) { }
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   const hadController = !!navigator.serviceWorker.controller;
   // When a new version takes over, reload once so it shows straight away (skip while a panel is open).
   navigator.serviceWorker.addEventListener('controllerchange', () => {
