@@ -85,7 +85,7 @@ function normAI(d) {
   }
   Object.keys(o).filter(k => /^\d+$/.test(k)).sort((a, b) => a - b).forEach(k => { if (typeof o[k] === 'string') arr.push(o[k]); delete o[k]; });
   o.next = arr.map(x => String(x).trim()).filter(Boolean).slice(0, 5);
-  ['headline', 'summary', 'food_idea', 'watch'].forEach(k => { if (o[k] != null && typeof o[k] !== 'string') o[k] = String(o[k]); });
+  ['headline', 'summary', 'food_idea', 'watch', 'full'].forEach(k => { if (o[k] != null && typeof o[k] !== 'string') o[k] = String(o[k]); });
   return o;
 }
 // Pull fields out of a JSON answer that was cut off mid-way.
@@ -101,14 +101,31 @@ function aiCardHTML(h, big) {
   const at = new Date(h.at);
   const when = at.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `<div class="card ${big ? 'aimain' : ''}">
-    <div class="spread"><span class="small muted">${esc(when)}</span><span class="small muted">${esc((AI_MODELS[h.model] || [h.model])[0].split(' (')[0])}${h.cost ? ` · ${h.cost < 0.01 ? '<1¢' : r1(h.cost * 100) + '¢'}` : ''}</span></div>
+    <div class="spread"><span class="small muted">${esc(when)}</span><span class="small muted">${h.model === 'morning' ? 'Morning analysis · free' : esc((AI_MODELS[h.model] || [h.model])[0].split(' (')[0])}${h.cost ? ` · ${h.cost < 0.01 ? '<1¢' : r1(h.cost * 100) + '¢'}` : ''}</span></div>
     <div style="font-size:${big ? 19 : 16}px;font-weight:650;margin-top:6px">${esc(d.headline || '')}</div>
     ${d.summary ? `<div style="margin-top:6px;line-height:1.45">${esc(d.summary)}</div>` : ''}
     ${(d.next || []).length ? `<div class="small muted" style="margin-top:10px;font-weight:600">NEXT</div><ol style="margin:4px 0 0;padding-left:20px;line-height:1.45">${d.next.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
     ${d.food_idea ? `<div class="preview" style="margin-top:10px">🍽 ${esc(d.food_idea)}</div>` : ''}
-    ${d.watch ? `<div class="small" style="margin-top:8px"><b>Watch:</b> ${esc(d.watch)}</div>` : ''}</div>`;
+    ${d.watch ? `<div class="small" style="margin-top:8px"><b>Watch:</b> ${esc(d.watch)}</div>` : ''}
+    ${d.full ? `<details style="margin-top:10px"><summary class="linkbtn" style="font-size:14px;cursor:pointer">Show full analysis</summary><div style="margin-top:6px;line-height:1.45;font-size:15px">${miniMd(d.full)}</div></details>` : ''}</div>`;
 }
 
+// Very small, safe markdown for the full morning analysis: headings, bullets, bold, links kept as text.
+function miniMd(t) {
+  const inline = x => esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  let html = '', list = null;
+  const close = () => { if (list) { html += `</${list}>`; list = null; } };
+  String(t || '').replace(/\r/g, '').split('\n').forEach(line => {
+    const l = line.trim();
+    if (!l) { close(); return; }
+    let m;
+    if ((m = l.match(/^#{1,4}\s+(.*)/))) { close(); html += `<div style="font-weight:650;margin:12px 0 4px">${inline(m[1])}</div>`; }
+    else if ((m = l.match(/^[-•*]\s+(.*)/))) { if (list !== 'ul') { close(); html += '<ul style="margin:4px 0;padding-left:20px">'; list = 'ul'; } html += `<li>${inline(m[1])}</li>`; }
+    else if ((m = l.match(/^\d+[.)]\s+(.*)/))) { if (list !== 'ol') { close(); html += '<ol style="margin:4px 0;padding-left:20px">'; list = 'ol'; } html += `<li>${inline(m[1])}</li>`; }
+    else { close(); html += `<div style="margin:4px 0">${inline(l)}</div>`; }
+  });
+  close(); return html;
+}
 function safeCard(h, big) { try { return aiCardHTML(h, big); } catch (e) { return `<div class="card small muted">Couldn't show this analysis (${esc(h.at || '')}).</div>`; } }
 function viewAI() {
   if (!settings.aiKey) {

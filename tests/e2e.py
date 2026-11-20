@@ -228,6 +228,12 @@ async def main():
         await pg.evaluate("h => { const a = JSON.parse(localStorage['fl.aiHistory']); a.push(h); localStorage['fl.aiHistory'] = JSON.stringify(a); }", bad)
         await pg.reload(); await pg.wait_for_timeout(500); await tab(pg, 'ai')
         txt = await pg.inner_text('#view')
+        morning = {'at': '2026-01-02T13:44:00Z', 'model': 'morning', 'cost': 0, 'data': {'headline': 'Green day', 'summary': 'Slept well.', 'next': ['Strength 30 min'], 'full': '## Analysis\n- **Recovery** good\n- HRV 44'}}
+        await pg.evaluate("h => { const a = JSON.parse(localStorage['fl.aiHistory']); a.push(h); localStorage['fl.aiHistory'] = JSON.stringify(a); }", morning)
+        await pg.reload(); await pg.wait_for_timeout(500); await tab(pg, 'ai')
+        await pg.click('summary:has-text("Show full analysis")')
+        txt2 = await pg.inner_text('#view')
+        check('Morning analysis · free' in txt2 and 'Recovery' in txt2 and '**' not in txt2, 'morning analysis shows as free with expandable full text')
         check('Odd shape' in txt and 'First step' in txt and 'Second step' in txt and '<parameter' not in txt, 'oddly shaped AI answers still display as a list')
 
         print('Targets and Today burn')
