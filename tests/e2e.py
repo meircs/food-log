@@ -156,6 +156,33 @@ async def main():
         await pg.click('[data-supp] >> nth=0'); await pg.wait_for_timeout(2500)
         check(len(repo.rows('data/supplements.csv')) == 1, 'supplement tick synced')
 
+        print('UI shortcuts')
+        check(await pg.locator('#tabs button svg').count() == 5, 'tab bar uses drawn icons')
+        await tab(pg, 'today'); await pg.click('[data-addm=lunch] >> nth=0')
+        check('Lunch' in await pg.inner_text('#dlabel'), '＋ Lunch opens Add for lunch')
+        await pg.fill('#s', 'banana'); await pg.click('#res .item[data-id]')
+        check(await pg.input_value('#m') == 'lunch', 'meal preselected as lunch'); await pg.click('#go'); await pg.wait_for_timeout(200)
+        check(await pg.locator('h2:has-text("Lunch") + .list .item', has_text='Banana').count() == 1, 'banana landed in lunch')
+        await tab(pg, 'more')
+        check(await pg.locator('#connedit').count() == 1, 'More shows compact "Connected" card')
+
+        print('Weigh-in')
+        before = repo.files['data/weight.csv']['text'].splitlines()
+        await tab(pg, 'today'); await pg.click('#wlog'); await pg.fill('#wk', '69.5'); await pg.click('#wsv'); await pg.wait_for_timeout(2500)
+        after = repo.files['data/weight.csv']['text'].splitlines()
+        check(after[:len(before)] == before and len(after) == len(before) + 1 and 'app:' in after[-1] and ',69.50,' in after[-1], 'weigh-in appended to weight.csv, other rows untouched')
+        check('69.5 kg' in await pg.inner_text('#wlog'), 'Today shows the weigh-in')
+
+        print('Edit and delete entries logged via Claude')
+        await pg.click('#view .item:has-text("Spaghetti with lean ground lamb and carrots"):has-text("via Claude")'); await pg.click('#redit')
+        await pg.click('#rp button[data-p="50"]'); await pg.click('#rsv'); await pg.wait_for_timeout(2500)
+        row = [l for l in repo.files['data/food.csv']['text'].splitlines() if 'spaghetti with lean ground lamb' in l][0]
+        check('(ate 50%)' in row and ',253,' in row and 'edited in food app' in row, 'edit changes the matching food.csv row')
+        n0 = len(repo.files['data/food.csv']['text'].splitlines())
+        pg.once('dialog', lambda d: asyncio.ensure_future(d.accept()))
+        await tab(pg, 'today'); await pg.click('#view .item:has-text("Spaghetti with lean ground lamb and carrots"):has-text("via Claude")'); await pg.click('#rdel'); await pg.wait_for_timeout(2500)
+        check(len(repo.files['data/food.csv']['text'].splitlines()) == n0 - 1 and not any('spaghetti with lean ground lamb' in l for l in repo.files['data/food.csv']['text'].splitlines()), 'delete removes only that row')
+
         print('Targets and Today burn')
         await tab(pg, 'more')
         check(await pg.locator('#tgsugg').count() == 1, 'suggested targets shown')

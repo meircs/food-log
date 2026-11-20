@@ -1,5 +1,5 @@
 // Offline cache for the Food log app. Bump CACHE when files change.
-const CACHE = 'food-log-v19';
+const CACHE = 'food-log-v20';
 const ASSETS = ['./', './index.html', './js/core.js', './js/sync.js', './js/food.js', './js/stats.js', './js/health.js', './js/more.js', './js/main.js', './manifest.json', './icon-180.png', './icon-512.png', './vendor/html5-qrcode.min.js'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

@@ -8,8 +8,8 @@ function viewToday() {
   const pct = Math.min(100, settings.kcal ? t.kcal / settings.kcal * 100 : 0);
   const pPct = settings.protein ? Math.min(100, t.p / settings.protein * 100) : 0;
   let html = `<div class="card">
-    <div class="spread"><div><div class="big">${r0(t.kcal)}</div><div class="muted small">of ${settings.kcal} kcal</div></div>
-    <div style="text-align:right"><div style="font-size:22px;font-weight:650;color:${left < 0 ? 'var(--warn)' : 'var(--accent)'}">${r0(Math.abs(left))}</div>
+    <div class="spread"><div><div class="big">${fmt(t.kcal)}</div><div class="muted small">of ${fmt(settings.kcal)} kcal</div></div>
+    <div style="text-align:right"><div style="font-size:22px;font-weight:650;color:${left < 0 ? 'var(--warn)' : 'var(--accent)'}">${fmt(Math.abs(left))}</div>
     <div class="muted small">${left < 0 ? 'over' : 'left'}</div></div></div>
     <div class="bar ${left < 0 ? 'over' : ''}"><i style="width:${pct}%"></i></div>
     <div class="macros">
@@ -19,11 +19,12 @@ function viewToday() {
     </div></div>
     ${burnLine(t.kcal)}
     <div class="small muted" id="syncline" style="margin:-4px 4px 8px">${esc(syncStatus())}</div>
-    ${suppCard()}`;
+    ${suppCard()}
+    <div class="mealadd">${['breakfast', 'lunch', 'dinner', 'snack'].map(m => `<button class="chip" data-addm="${m}">＋ ${cap(m)}</button>`).join('')}<button class="chip" id="wlog">${weightChip()}</button></div>`;
   if (!day.length) html += `<div class="list"><div class="empty">Nothing logged yet.<br><button class="btn" id="goadd" style="max-width:220px;margin:12px auto 0">Add food</button></div></div>`;
   for (const m of MEALS) {
     const items = day.filter(e => e.meal === m); if (!items.length) continue;
-    html += `<h2><span class="spread"><span>${cap(m)} · ${r0(totals(items).kcal)} kcal</span><button class="linkbtn" data-save="${m}">Save as meal</button></span></h2><div class="list">` +
+    html += `<h2><span class="spread"><span>${cap(m)} · ${fmt(totals(items).kcal)} kcal</span><span><button class="linkbtn" data-addm="${m}" style="margin-right:12px">＋ Add</button><button class="linkbtn" data-save="${m}">Save as meal</button></span></span></h2><div class="list">` +
       items.map(e => `<button class="item" data-id="${e.id}"><div class="grow"><div class="name">${esc(e.name)}</div>
         <div class="small muted">${esc(e.time)}${e.amount ? ' · ' + esc(e.amount) : ''}${e.remote ? ` · <span style="color:var(--accent)">${e.other ? 'other device' : 'via Claude'}</span>` : ''}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
   }
@@ -33,6 +34,8 @@ function viewToday() {
   $('#view').querySelectorAll('[data-supp]').forEach(b => b.onclick = () => toggleSupp(b.dataset.supp));
   const se = $('#suppedit'); if (se) se.onclick = editSupps;
   $('#view').querySelectorAll('.item').forEach(b => b.onclick = () => { const e = day.find(x => x.id === b.dataset.id); e.remote ? showRemote(e) : editEntry(e); });
+  $('#view').querySelectorAll('[data-addm]').forEach(b => b.onclick = () => { state.tab = 'add'; render(); state.addMeal = b.dataset.addm; renderHeader(); window.scrollTo(0, 0); });
+  const wl = $('#wlog'); if (wl) wl.onclick = () => logWeight();
   $('#view').querySelectorAll('[data-save]').forEach(b => b.onclick = () => saveAsMeal(day.filter(e => e.meal === b.dataset.save), b.dataset.save));
 }
 
@@ -45,15 +48,74 @@ function burnLine(eaten) {
   const y = garmin[addDays(todayStr(), -1)], b = m.gAvg - eaten;
   return `<div class="small" style="margin:-4px 4px 8px">🔥 Expected burn today ≈ <b>${fmt(m.gAvg)}</b> kcal <span class="muted">(your Garmin average)</span> · ${b >= 0 ? `${fmt(b)} below so far` : `${fmt(-b)} above`}${y && y.total ? `<span class="muted"> · yesterday ${fmt(y.total)}</span>` : ''}</div>`;
 }
+function weightChip() {
+  const w = weightLog.find(x => x.date === state.date) || weights.find(x => x.date === state.date);
+  return w ? `⚖ ${r1(w.kg)} kg` : '⚖ Weight';
+}
+function logWeight() {
+  const ex = weightLog.find(x => x.date === state.date);
+  const last = ex ? ex.kg : (weights.length ? weights[weights.length - 1].kg : '');
+  openSheet(`<h3>Weigh-in · ${esc(dateLabel(state.date))}</h3><div class="small muted">Best first thing in the morning, after the bathroom, before eating.</div>
+    <div class="grid2"><div><label>Weight (kg)</label><input type="text" inputmode="decimal" id="wk" value="${last}"></div>
+    <div><label>Body fat % (optional)</label><input type="text" inputmode="decimal" id="wb" value="${ex && ex.bf ? ex.bf : ''}"></div></div>
+    <label>Time</label><input type="time" id="wt" value="${ex ? ex.time : state.date === todayStr() ? nowTime() : '08:00'}">
+    <button class="btn" id="wsv">Save</button>${ex ? '<button class="btn danger" id="wdel">Delete this weigh-in</button>' : ''}`, s => {
+    $('#wsv', s).onclick = () => {
+      const kg = num($('#wk', s).value); if (kg < 25 || kg > 300) return toast('Enter your weight in kg');
+      const bf = num($('#wb', s).value) || null, time = $('#wt', s).value || nowTime();
+      if (ex) Object.assign(ex, { kg, bf, time, exported: false });
+      else weightLog.push({ id: uid(), date: state.date, time, kg, bf, exported: false });
+      weights = weights.filter(x => x.date !== state.date).concat({ date: state.date, kg }).sort((a, b) => a.date.localeCompare(b.date)); store.set('weights', weights);
+      store.set('weightLog', weightLog); scheduleSync(); closeSheet(); render(); toast(`Saved ${r1(kg)} kg`);
+    };
+    const d = $('#wdel', s); if (d) d.onclick = () => {
+      if (ex.exported) { const dl = store.get('wDeleted', []); dl.push(ex.id); store.set('wDeleted', dl); }
+      weightLog = weightLog.filter(x => x !== ex); store.set('weightLog', weightLog);
+      weights = weights.filter(x => x.date !== state.date); store.set('weights', weights); scheduleSync(); closeSheet(); render(); toast('Deleted');
+    };
+  });
+}
+function editRemote(e) {
+  openSheet(`<h3>Edit: ${esc(e.name)}</h3><div class="small muted">Changes go into your food log on the next sync.</div>
+    <label>Ate only part of it?</label><div class="seg" id="rp"><button data-p="25">25%</button><button data-p="50">50%</button><button data-p="75">75%</button><button data-p="100" class="on">All</button></div>
+    <div class="grid2"><div><label>Calories</label><input type="text" inputmode="decimal" id="rk" value="${r0(e.kcal)}"></div>
+    <div><label>Protein g</label><input type="text" inputmode="decimal" id="rpp" value="${r0(e.p)}"></div>
+    <div><label>Carbs g</label><input type="text" inputmode="decimal" id="rc" value="${r0(e.c)}"></div>
+    <div><label>Fat g</label><input type="text" inputmode="decimal" id="rf" value="${r0(e.f)}"></div></div>
+    <div class="grid2"><div><label>Meal</label><select id="rm">${MEALS.map(m => `<option ${m === e.meal ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+    <div><label>Time</label><input type="time" id="rt" value="${esc(e.time)}"></div></div>
+    <button class="btn" id="rsv">Save changes</button>`, s => {
+    const base = { k: e.kcal, p: e.p, c: e.c, f: e.f };
+    s.querySelectorAll('#rp button').forEach(b => b.onclick = () => {
+      s.querySelectorAll('#rp button').forEach(x => x.classList.toggle('on', x === b)); const k = +b.dataset.p / 100;
+      $('#rk', s).value = r0(base.k * k); $('#rpp', s).value = r0(base.p * k); $('#rc', s).value = r0(base.c * k); $('#rf', s).value = r0(base.f * k);
+    });
+    $('#rsv', s).onclick = () => {
+      const pctTxt = (s.querySelector('#rp button.on') || {}).dataset?.p;
+      const vals = { calories: r0(num($('#rk', s).value)), protein_g: r0(num($('#rpp', s).value)), carbs_g: r0(num($('#rc', s).value)), fat_g: r0(num($('#rf', s).value)),
+        meal: $('#rm', s).value, time: $('#rt', s).value || e.time, pct: pctTxt && pctTxt !== '100' ? +pctTxt : null };
+      remoteOps.push({ op: 'edit', date: e.date, time: e.origTime || e.time, desc: e.full, vals }); store.set('remoteOps', remoteOps);
+      Object.assign(e, { kcal: vals.calories, p: vals.protein_g, c: vals.carbs_g, f: vals.fat_g, meal: vals.meal, origTime: e.origTime || e.time, time: vals.time });
+      store.set('remote', remote); scheduleSync(); closeSheet(); render(); toast('Saved');
+    };
+  });
+}
 function showRemote(e) {
   openSheet(`<h3>${esc(e.name)}</h3><div class="small" style="color:var(--accent);margin-top:2px">${e.other ? 'Logged in the app on another device' : 'Logged via Claude'}</div>
     ${e.full ? `<div class="small muted" style="margin-top:6px">${esc(e.full)}</div>` : ''}
     <div class="preview"><b>${r0(e.kcal)} kcal</b> · P ${r0(e.p)} g · C ${r0(e.c)} g · F ${r0(e.f)} g${e.caf ? ` · ☕ ${r0(e.caf)} mg` : ''}${e.alc ? ` · 🍺 ${r1(e.alc)}` : ''}</div>
     <div class="small muted" style="margin-top:8px">${esc(e.date)} ${esc(e.time)} · ${esc(e.meal)}${e.note ? ' · ' + esc(e.note) : ''}</div>
-    <div class="small muted" style="margin-top:10px">${e.other ? 'To change or delete it, open the app on the device where you logged it.' : 'To change or delete this one, tell Claude. It updates here on the next sync.'}</div>
+    <div class="small muted" style="margin-top:10px">${e.other ? 'To change or delete it, open the app on the device where you logged it.' : 'You can edit or delete it here, or ask Claude.'}</div>
+    ${e.other ? '' : '<div class="btnrow"><button class="btn secondary" id="redit">Edit</button><button class="btn danger" id="rdel">Delete</button></div>'}
     <button class="btn secondary" id="dup">Log again now (in the app)</button>
     ${!e.other && !foods.some(f => f.name.toLowerCase() === e.name.toLowerCase()) ? '<button class="btn secondary" id="tolib">Save to My foods</button>' : ''}`, s => {
     const tl = $('#tolib', s); if (tl) tl.onclick = () => { foodFromLog(e); closeSheet(); };
+    const re = $('#redit', s); if (re) re.onclick = () => editRemote(e);
+    const rd = $('#rdel', s); if (rd) rd.onclick = () => {
+      if (!confirm(`Delete “${e.name}” from your food log?`)) return;
+      remoteOps.push({ op: 'del', date: e.date, time: e.origTime || e.time, desc: e.full }); store.set('remoteOps', remoteOps);
+      remote = remote.filter(x => x !== e); store.set('remote', remote); scheduleSync(); closeSheet(); render(); toast('Deleted');
+    };
     $('#dup', s).onclick = () => {
       const t = state.date === todayStr() ? nowTime() : e.time;
       entries.push({ id: uid(), date: state.date, time: t, meal: mealFor(t), foodId: null, name: e.name, qty: null, mode: 'serving', amount: '1 serving',
@@ -178,7 +240,7 @@ function logFood(food) {
     <div class="row"><div class="seg" id="pct" style="flex:1"><button data-p="25">25%</button><button data-p="50">50%</button><button data-p="75">75%</button><button data-p="100">All</button></div>
     <input type="text" inputmode="numeric" id="pcti" value="100" style="width:64px;text-align:center" aria-label="Percent eaten"><span class="muted">%</span></div>
     <div class="preview" id="pv"></div>
-    <div class="grid2"><div><label>Meal</label><select id="m">${MEALS.map(m => `<option ${m === mealFor(t0) ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+    <div class="grid2"><div><label>Meal</label><select id="m">${MEALS.map(m => `<option ${m === (state.addMeal || mealFor(t0)) ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
     <div><label>Time</label><input type="time" id="t" value="${t0}"></div></div>
     <button class="btn" id="go">Add to ${esc(dateLabel(state.date).toLowerCase() === 'today' ? 'today' : dateLabel(state.date))}</button>
     <button class="btn secondary" id="ed">Edit this food</button>`, s => {
@@ -205,7 +267,7 @@ function logFood(food) {
     };
     s.querySelectorAll('#seg button').forEach(b => b.onclick = () => setMode(b.dataset.m));
     q.oninput = upd;
-    $('#t', s).onchange = () => { $('#m', s).value = mealFor($('#t', s).value || t0); };
+    $('#t', s).onchange = () => { if (!state.addMeal) $('#m', s).value = mealFor($('#t', s).value || t0); };
     setMode(mode); setPct(100);
     $('#go', s).onclick = () => {
       const qty = num(q.value); if (qty <= 0) return toast('Enter an amount');
@@ -214,7 +276,7 @@ function logFood(food) {
         qty, mode, pct, amount: amountText(food, qty, mode, pct), ...n, exported: false, created: Date.now() });
       Object.assign(food, { uses: (food.uses || 0) + 1, lastUsed: Date.now(), lastQty: qty, lastMode: mode });
       saveEntries(); saveFoods(false); closeSheet();
-      state.q = ''; state.tab = 'today'; render(); toast(`Added ${r0(n.kcal)} kcal`);
+      state.q = ''; state.tab = 'today'; state.addMeal = null; render(); toast(`Added ${r0(n.kcal)} kcal`);
     };
     $('#ed', s).onclick = () => editFood(food, f => logFood(f));
   });
@@ -231,11 +293,11 @@ function quickAdd() {
     <div><label>Fat g</label><input type="text" inputmode="decimal" id="f"></div>
     <div><label>Caffeine mg</label><input type="text" inputmode="decimal" id="caf"></div>
     <div><label>Alcohol (drinks)</label><input type="text" inputmode="decimal" id="alc"></div></div>
-    <div class="grid2"><div><label>Meal</label><select id="m">${MEALS.map(m => `<option ${m === mealFor(t0) ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+    <div class="grid2"><div><label>Meal</label><select id="m">${MEALS.map(m => `<option ${m === (state.addMeal || mealFor(t0)) ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
     <div><label>Time</label><input type="time" id="t" value="${t0}"></div></div>
     <label class="row" style="color:var(--ink);font-size:15px;margin-top:14px"><input type="checkbox" id="sv" style="width:20px;height:20px"> Save to My foods for next time</label>
     <button class="btn" id="go">Add</button>`, s => {
-    $('#t', s).onchange = () => { $('#m', s).value = mealFor($('#t', s).value || t0); };
+    $('#t', s).onchange = () => { if (!state.addMeal) $('#m', s).value = mealFor($('#t', s).value || t0); };
     $('#go', s).onclick = () => {
       const name = $('#nm', s).value.trim() || 'Quick add'; const k = num($('#k', s).value);
       if (k <= 0) return toast('Enter calories');
@@ -249,7 +311,7 @@ function quickAdd() {
       const time = $('#t', s).value || t0;
       entries.push({ id: uid(), date: state.date, time, meal: $('#m', s).value, foodId, name, qty: foodId ? 1 : null, mode: 'serving',
         amount: amt, ...n, exported: false, created: Date.now() });
-      saveEntries(); closeSheet(); state.tab = 'today'; render(); toast(`Added ${r0(k)} kcal`);
+      saveEntries(); closeSheet(); state.tab = 'today'; state.addMeal = null; render(); toast(`Added ${r0(k)} kcal`);
     };
   });
 }
@@ -333,7 +395,7 @@ function saveAsMeal(items, slot, existing) {
 function logMeal(meal) {
   const t0 = state.date === todayStr() ? nowTime() : '12:00';
   const tot = totals(meal.items);
-  const slot0 = meal.keepTimes ? meal.items[0].meal : mealFor(t0);
+  const slot0 = meal.keepTimes ? meal.items[0].meal : (state.addMeal || mealFor(t0));
   openSheet(`<h3>${esc(meal.name)}</h3><div class="muted small">Untick anything you didn't have this time.</div>
     <div class="list" style="margin-top:10px">${meal.items.map((e, i) => `<label class="item" style="margin:0;color:var(--ink);font-size:16px">
       <input type="checkbox" data-i="${i}" checked style="width:20px;height:20px"><div class="grow"><div class="name">${esc(e.name)}</div><div class="small muted">${esc(e.amount)}</div></div><div class="kcal">${r0(e.kcal)}</div></label>`).join('')}</div>
@@ -345,7 +407,7 @@ function logMeal(meal) {
     const chosen = () => [...s.querySelectorAll('input[data-i]')].filter(c => c.checked).map(c => meal.items[+c.dataset.i]);
     const upd = () => { const t = totals(chosen()); $('#pv', s).innerHTML = `<b>${r0(t.kcal)} kcal</b> · P ${r0(t.p)} g · C ${r0(t.c)} g · F ${r0(t.f)} g`; };
     s.querySelectorAll('input[data-i]').forEach(c => c.onchange = upd); upd();
-    $('#t', s).onchange = () => { $('#m', s).value = mealFor($('#t', s).value || t0); };
+    $('#t', s).onchange = () => { if (!state.addMeal) $('#m', s).value = mealFor($('#t', s).value || t0); };
     $('#go', s).onclick = () => {
       const items = chosen(); if (!items.length) return toast('Nothing selected');
       const time = $('#t', s).value || t0, slot = $('#m', s).value;
@@ -354,7 +416,7 @@ function logMeal(meal) {
         const f = foods.find(x => x.id === it.foodId); if (f) Object.assign(f, { uses: (f.uses || 0) + 1, lastUsed: Date.now() });
       }
       if (meal.id) meal.lastUsed = Date.now(), store.set('meals', meals);
-      saveEntries(); saveFoods(false); closeSheet(); state.q = ''; state.tab = 'today'; render();
+      saveEntries(); saveFoods(false); closeSheet(); state.q = ''; state.tab = 'today'; state.addMeal = null; render();
       toast(`Added ${items.length} item${items.length === 1 ? '' : 's'} · ${r0(totals(items).kcal)} kcal`);
     };
     const rn = $('#rn', s); if (rn) rn.onclick = () => saveAsMeal(meal.items, '', meal);

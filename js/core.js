@@ -56,6 +56,8 @@ let supps = store.get('supps', []);       // [{id, name, dose}]
 let suppLog = store.get('suppLog', []);   // [{id, date, time, suppId, name, dose, exported}]
 const saveSupps = () => { store.set('supps', supps); bumpLib(); scheduleSync(); };
 const saveSuppLog = () => { store.set('suppLog', suppLog); scheduleSync(); };
+let weightLog = store.get('weightLog', []); // in-app weigh-ins [{id,date,time,kg,bf,exported}]
+let remoteOps = store.get('remoteOps', []); // pending edits/deletes of rows Claude logged
 let remote = store.get('remote', []); // rows Claude logged in food.csv (read-only here)
 // changed=true marks the library for backup; usage stats alone don't trigger a backup commit.
 const saveFoods = (changed = true) => { store.set('foods', foods); if (changed) { bumpLib(); scheduleSync(); } };
@@ -126,7 +128,7 @@ function renderHeader() {
   const h = $('#hdr');
   if (state.tab === 'today' || state.tab === 'add') {
     h.innerHTML = `<button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
-      <h1 id="dlabel">${state.tab === 'add' ? 'Add to ' : ''}${esc(dateLabel(state.date))}</h1>
+      <h1 id="dlabel">${state.tab === 'add' ? 'Add to ' + (state.addMeal ? cap(state.addMeal) + ', ' : '') : ''}${esc(dateLabel(state.date))}</h1>
       <button class="iconbtn" id="next" aria-label="Next day">›</button>`;
     $('#prev').onclick = () => { state.date = addDays(state.date, -1); render(); };
     $('#next').onclick = () => { state.date = addDays(state.date, 1); render(); };
@@ -136,12 +138,20 @@ function renderHeader() {
     const bk = $('#back'); if (bk) bk.onclick = () => { state.tab = 'more'; render(); };
   }
 }
+const ICONS = {
+  today: '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>',
+  add: '<path d="M12 5v14M5 12h14"/>',
+  stats: '<path d="M5 20V11M12 20V5M19 20v-7"/>',
+  health: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  more: '<path d="M5 7h14M5 12h14M5 17h14"/>'
+};
+const icon = k => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 function renderTabs() {
   const pending = entries.filter(e => !e.exported).length;
-  const tabs = [['today', '◐', 'Today'], ['add', '＋', 'Add'], ['stats', '▥', 'Stats'], ['health', '♡', 'Health'], ['more', '☰', 'More']];
+  const tabs = [['today', 'today', 'Today'], ['add', 'add', 'Add'], ['stats', 'stats', 'Stats'], ['health', 'health', 'Health'], ['more', 'more', 'More']];
   $('#tabs').innerHTML = tabs.map(([k, i, l]) =>
-    `<button data-t="${k}" class="${state.tab === k || (k === 'more' && state.tab === 'foods') ? 'on' : ''}"><span>${i}</span>${l}${k === 'more' && pending ? `<i class="badge">${pending}</i>` : ''}</button>`).join('');
-  $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; render(); window.scrollTo(0, 0); });
+    `<button data-t="${k}" class="${state.tab === k || (k === 'more' && state.tab === 'foods') ? 'on' : ''}"><span>${icon(i)}</span>${l}${k === 'more' && pending ? `<i class="badge">${pending}</i>` : ''}</button>`).join('');
+  $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; state.addMeal = null; render(); window.scrollTo(0, 0); });
 }
 function render() {
   renderHeader(); renderTabs();

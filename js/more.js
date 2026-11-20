@@ -17,9 +17,11 @@ function viewMore() {
   const lastExp = store.get('lastExport', 0);
   const days = lastExp ? Math.floor((Date.now() - lastExp) / 864e5) : null;
   $('#view').innerHTML = `
-    <button class="item card" id="gofoods" style="border:1px solid var(--line);border-radius:var(--r);margin-bottom:12px"><div class="grow"><b>My foods &amp; saved meals</b><div class="small muted">${foods.length} foods · ${meals.length} meals · edit, add, delete</div></div><div class="muted">›</div></button>
+    <button class="item card" id="gofoods" style="border:1px solid var(--line);border-radius:var(--r);margin-bottom:12px"><div class="grow"><b>My foods &amp; saved meals</b><div class="small muted">${foods.length} foods · ${meals.length} meal${meals.length === 1 ? '' : 's'} · edit, add, delete</div></div><div class="muted">›</div></button>
     ${!settings.ghToken && pending.length && (days === null || days >= 7) ? `<div class="notice">Your entries are stored only on this phone. ${days === null ? 'You haven’t exported yet.' : `Last export was ${days} days ago.`} Export at least once a week.</div>` : ''}
-    <div class="card"><b>Auto-sync to your health repo</b>
+    ${settings.ghToken && !store.get('syncError', '') && !state.showConn ? `<div class="card"><div class="conn"><span style="color:var(--accent);font-size:20px">✓</span><div class="grow" style="flex:1"><b>Connected</b>
+      <div class="small muted">${esc(settings.ghRepo)} · ${esc(syncStatus() || 'up to date')}</div></div><button class="linkbtn" id="connedit">Change</button></div>
+      <button class="btn secondary" id="gsync">Sync now</button></div>` : `<div class="card"><b>Auto-sync to your health repo</b>
       <div class="muted small" style="margin-top:4px">${settings.ghToken
         ? `On. New entries go to <b>${esc(settings.ghRepo)}/${esc(settings.ghPath)}</b> by themselves whenever you're online, and your foods and saved meals are backed up to <b>${esc(settings.ghLibPath)}</b>.`
         : 'Off. Paste a GitHub token (repo contents: read and write) to send entries to your health log automatically.'}</div>
@@ -29,13 +31,13 @@ function viewMore() {
       <div class="grid2"><div><label>Repo</label><input type="text" id="gr" value="${esc(settings.ghRepo)}" autocapitalize="off"></div>
       <div><label>File</label><input type="text" id="gp" value="${esc(settings.ghPath)}" autocapitalize="off"></div></div>
       <div class="btnrow"><button class="btn secondary" id="gsave">Save &amp; test</button><button class="btn" id="gsync" ${settings.ghToken ? '' : 'disabled'}>Sync now</button></div>
-    </div>
-    <div class="card"><b>Manual export</b>
+    </div>`}
+    ${settings.ghToken ? '' : `<div class="card"><b>Manual export</b>
       <div class="muted small" style="margin-top:4px">If auto-sync is off: share the file to the <b>Google Drive → Food log</b> folder, and Claude adds it to your health log.</div>
       <button class="btn" id="exn" ${pending.length ? '' : 'disabled'}>Share ${pending.length} new ${pending.length === 1 ? 'entry' : 'entries'}</button>
       <button class="btn secondary" id="cpy" ${pending.length ? '' : 'disabled'}>Copy new entries as text</button>
       <div class="small muted" style="margin-top:8px">${lastExp ? `Last export: ${new Date(lastExp).toLocaleString()}` : 'Not exported yet'} · ${entries.length} entries total</div>
-    </div>
+    </div>`}
     <div class="card"><b>Daily targets</b>${targetsHTML()}
       <label>Or set your own</label><div class="grid2"><div><label>Calories</label><input type="text" inputmode="numeric" id="tk" value="${settings.kcal}"></div>
       <div><label>Protein g</label><input type="text" inputmode="numeric" id="tp" value="${settings.protein}"></div></div>
@@ -49,18 +51,19 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v19 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v20 · works offline</div>`;
   $('#gofoods').onclick = () => { state.tab = 'foods'; render(); window.scrollTo(0, 0); };
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
-  $('#exn').onclick = async () => {
+  if ($('#exn')) $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
     if (ok) { markDone(); toast('Exported'); }
   };
-  $('#cpy').onclick = async () => {
+  if ($('#cpy')) $('#cpy').onclick = async () => {
     try { await navigator.clipboard.writeText(toCSV(pending)); } catch (e) { return toast('Copy failed'); }
     if (confirm('Copied. Mark these entries as exported?')) { markDone(); toast('Marked as exported'); }
   };
-  $('#gsave').onclick = async () => {
+  const ce = $('#connedit'); if (ce) ce.onclick = () => { state.showConn = true; render(); };
+  const gsv = $('#gsave'); if (gsv) gsv.onclick = async () => {
     settings.ghToken = $('#gt').value.replace(/\s+/g, '');
     if (settings.ghToken && !/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(settings.ghToken)) { toast(`That doesn't look like a GitHub token (starts “${settings.ghToken.slice(0, 6)}”, ${settings.ghToken.length} chars). Copy it again.`); return; } settings.ghRepo = $('#gr').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
     settings.ghPath = $('#gp').value.trim().replace(/^\//, ''); saveSettings();
@@ -68,7 +71,7 @@ function viewMore() {
     if (!navigator.onLine) { render(); return toast('Saved. Will test when online.'); }
     try {
       const g = await gh('GET');
-      if (g.ok) { const f = await g.json(); const rows = b64ToText(f.content || '').trim().split('\n').length - 1; store.set('syncError', ''); toast(`Connected ✓ (${rows} rows in file)`); if (store.get('libEdited', false) || !(await loadLibraryFromRepo(false).catch(() => false))) bumpLib(); render(); sync(false); }
+      if (g.ok) { const f = await g.json(); const rows = b64ToText(f.content || '').trim().split('\n').length - 1; store.set('syncError', ''); toast(`Connected ✓ (${rows} rows in file)`); state.showConn = false; if (store.get('libEdited', false) || !(await loadLibraryFromRepo(false).catch(() => false))) bumpLib(); render(); sync(false); }
       else { store.set('syncError', g.status === 404 ? 'repo or file not found' : 'token rejected'); toast(g.status === 404 ? 'Repo or file not found (check token access)' : 'Token rejected'); render(); }
     } catch (e) { toast('Could not reach GitHub'); }
   };

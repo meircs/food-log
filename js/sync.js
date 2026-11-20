@@ -16,8 +16,10 @@ async function sync(manual) {
   if (!settings.ghToken) { if (manual) toast('Add your GitHub token first'); return; }
   if (syncing) return;
   const suppWork = suppLog.some(l => !l.exported) || store.get('suppDeleted', []).length;
-  const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty() || suppWork;
+  const wWork = weightLog.some(w => !w.exported) || store.get('wDeleted', []).length;
+  const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty() || suppWork || wWork || remoteOps.length;
   await syncEntries(manual);
+  if (navigator.onLine && (remoteOps.length || wWork)) { syncing = true; try { await syncRemoteOps(); await syncWeights(); } catch (e) { store.set('syncError', e.message); } finally { syncing = false; } }
   if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullRemote(); } catch (e) { store.set('syncError', 'could not reach GitHub: ' + e.message); } }
   if (navigator.onLine) { try { await pullGarmin(false); } catch (e) { } }
   { const l = $('#syncline'); if (l) l.textContent = syncStatus(); if (state.tab === 'more') render(); }
@@ -65,6 +67,50 @@ function splitAppDesc(d) {
   d = String(d || ''); let depth = 0, cut = -1;
   for (let i = 0; i < d.length; i++) { const ch = d[i]; if (ch === '(') depth++; else if (ch === ')') depth = Math.max(0, depth - 1); else if (ch === ',' && !depth && d[i + 1] === ' ') cut = i; }
   return cut > 0 ? { name: d.slice(0, cut), amount: d.slice(cut + 2) } : { name: d, amount: '' };
+}
+async function syncWeights() {
+  const pending = weightLog.filter(w => !w.exported), deleted = store.get('wDeleted', []);
+  if (!pending.length && !deleted.length) return;
+  const path = settings.ghPath.replace(/[^/]*$/, '') + 'weight.csv', ids = new Set([...pending.map(w => w.id), ...deleted]);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const g = await gh('GET', null, path); let text = 'date,time,weight_kg,body_fat_pct,source,notes\n', sha;
+    if (g.ok) { const f = await g.json(); text = b64ToText(f.content || ''); sha = f.sha; } else if (g.status !== 404) throw new Error('weight: GitHub error ' + g.status);
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.length);
+    const kept = lines.filter((l, i) => { if (!i) return true; const m = l.match(/app:([a-z0-9]+)/); return !(m && ids.has(m[1])); });
+    const added = pending.map(w => [w.date, w.time, w.kg.toFixed(2), w.bf ?? '', 'manual', 'logged in food app app:' + w.id].map(csvCell).join(','));
+    const p = await gh('PUT', { message: `Weigh-in from food app${pending.length ? ' ' + pending.map(w => w.date).join(', ') : ''}`, content: textToB64([...kept, ...added].join('\n') + '\n'), ...(sha ? { sha } : {}) }, path);
+    if (p.status === 409 || p.status === 422) continue;
+    if (!p.ok) throw new Error('weight: GitHub error ' + p.status);
+    const sent = new Set(pending.map(w => w.id)); weightLog.forEach(w => { if (sent.has(w.id)) w.exported = true; }); store.set('weightLog', weightLog);
+    store.set('wDeleted', store.get('wDeleted', []).filter(id => !ids.has(id))); return;
+  }
+}
+// Apply edits/deletes of rows Claude logged: change only the matching line, leave every other line as it is.
+async function syncRemoteOps() {
+  if (!remoteOps.length) return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const g = await gh('GET'); if (!g.ok) throw new Error('GitHub error ' + g.status);
+    const f = await g.json(); const lines = b64ToText(f.content || '').replace(/\r/g, '').split('\n');
+    const head = parseCSV(lines[0])[0]; const ix = k => head.indexOf(k);
+    const ops = remoteOps.slice(); let changed = 0;
+    for (const op of ops) {
+      const i = lines.findIndex((l, k) => { if (!k || !l) return false; const r = parseCSV(l)[0] || []; return r[ix('date')] === op.date && r[ix('time')] === op.time && r[ix('description')] === op.desc; });
+      if (i < 0) continue;
+      if (op.op === 'del') lines.splice(i, 1);
+      else { const r = parseCSV(lines[i])[0]; const v = op.vals;
+        ['calories', 'protein_g', 'carbs_g', 'fat_g', 'meal', 'time'].forEach(k => { r[ix(k)] = String(v[k]); });
+        if (v.pct) { r[ix('description')] = `${r[ix('description')]} (ate ${v.pct}%)`; }
+        r[ix('notes')] = [r[ix('notes')], 'edited in food app'].filter(Boolean).join('; ');
+        lines[i] = r.map(csvCell).join(','); }
+      changed++;
+    }
+    if (changed) {
+      const p = await gh('PUT', { message: `Food app: ${changed} edit${changed === 1 ? '' : 's'} to logged entries`, content: textToB64(lines.join('\n')), sha: f.sha });
+      if (p.status === 409 || p.status === 422) continue;
+      if (!p.ok) throw new Error('GitHub error ' + p.status);
+    }
+    remoteOps = remoteOps.filter(o => !ops.includes(o)); store.set('remoteOps', remoteOps); store.set('remotePulled', 0); return;
+  }
 }
 async function pullRemote() {
   const g = await gh('GET');
