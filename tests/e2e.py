@@ -224,6 +224,11 @@ async def main():
         await pg.wait_for_timeout(2500)
         check('data/ai_history.json' in repo.files and 'Protein is your gap' in repo.files['data/ai_history.json']['text'], 'AI history synced to repo')
         check('sk-ant' not in json.dumps(repo.files), 'API key never written to the repo')
+        bad = {'at': '2026-01-01T10:00:00Z', 'model': 'claude-sonnet-5-5', 'cost': 0.01, 'data': {'1': 'Second step', 'headline': 'Odd shape', 'summary': 'S', 'next': '\n<parameter name="0">First step'}}
+        await pg.evaluate("h => { const a = JSON.parse(localStorage['fl.aiHistory']); a.push(h); localStorage['fl.aiHistory'] = JSON.stringify(a); }", bad)
+        await pg.reload(); await pg.wait_for_timeout(500); await tab(pg, 'ai')
+        txt = await pg.inner_text('#view')
+        check('Odd shape' in txt and 'First step' in txt and 'Second step' in txt and '<parameter' not in txt, 'oddly shaped AI answers still display as a list')
 
         print('Targets and Today burn')
         await tab(pg, 'more')

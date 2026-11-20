@@ -38,7 +38,7 @@ Be brief: the headline is one short line, the summary is 2-3 sentences, each nex
 const AI_TOOL = { name: 'coach_report', description: 'Report the coaching analysis to show in the app.', input_schema: { type: 'object', properties: {
   headline: { type: 'string', description: 'One line, max 80 characters' },
   summary: { type: 'string', description: '2-3 sentences with the key numbers' },
-  next: { type: 'array', items: { type: 'string' }, description: '3 specific actions for the rest of today / tomorrow, one sentence each' },
+  next: { type: 'array', items: { type: 'string' }, description: 'A JSON array of 3 strings: specific actions for the rest of today / tomorrow, one sentence each' },
   food_idea: { type: 'string', description: 'One concrete meal or snack that fits what is left today, with rough kcal and protein' },
   watch: { type: 'string', description: 'One thing to keep an eye on this week, or empty' } }, required: ['headline', 'summary', 'next'] } };
 
@@ -63,6 +63,7 @@ async function aiUpdate() {
     const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
     let data = tool ? tool.input : null;
     if (!data) { try { data = JSON.parse(text.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { data = salvage(text); } }
+    data = normAI(data);
     if (!data || !data.headline) throw new Error('Claude returned an incomplete answer. Tap Update again.');
     const p = AI_MODELS[model] || AI_MODELS['claude-sonnet-5-5'], u = j.usage || {};
     const cost = ((u.input_tokens || 0) * p[1] + (u.output_tokens || 0) * p[2]) / 1e6;
@@ -73,6 +74,20 @@ async function aiUpdate() {
   finally { aiBusy = false; if (state.tab === 'ai') viewAI(); }
 }
 
+// Models sometimes return "next" as one string or as numbered keys; turn it all into a clean list.
+function normAI(d) {
+  if (!d || typeof d !== 'object') return d;
+  const o = { ...d }; let arr = [];
+  if (Array.isArray(o.next)) arr = o.next.slice();
+  else if (typeof o.next === 'string') {
+    try { const p = JSON.parse(o.next); if (Array.isArray(p)) arr = p; } catch (e) { }
+    if (!arr.length) arr = o.next.replace(/<\/?parameter[^>]*>/g, '\n').split(/\n+/).map(x => x.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, '').trim()).filter(Boolean);
+  }
+  Object.keys(o).filter(k => /^\d+$/.test(k)).sort((a, b) => a - b).forEach(k => { if (typeof o[k] === 'string') arr.push(o[k]); delete o[k]; });
+  o.next = arr.map(x => String(x).trim()).filter(Boolean).slice(0, 5);
+  ['headline', 'summary', 'food_idea', 'watch'].forEach(k => { if (o[k] != null && typeof o[k] !== 'string') o[k] = String(o[k]); });
+  return o;
+}
 // Pull fields out of a JSON answer that was cut off mid-way.
 function salvage(text) {
   if (!/^\s*\{/.test(text || '')) return text ? { headline: 'Analysis', summary: text, next: [] } : null;
@@ -82,7 +97,7 @@ function salvage(text) {
   const h = str('headline'); return h ? { headline: h, summary: str('summary'), next, food_idea: str('food_idea'), watch: str('watch') } : null;
 }
 function aiCardHTML(h, big) {
-  let d = h.data || {}; if (/^\s*\{/.test(d.summary || '')) d = salvage(d.summary) || d;
+  let d = h.data || {}; if (/^\s*\{/.test(d.summary || '')) d = salvage(d.summary) || d; d = normAI(d) || {};
   const at = new Date(h.at);
   const when = at.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `<div class="card ${big ? 'aimain' : ''}">
@@ -94,6 +109,7 @@ function aiCardHTML(h, big) {
     ${d.watch ? `<div class="small" style="margin-top:8px"><b>Watch:</b> ${esc(d.watch)}</div>` : ''}</div>`;
 }
 
+function safeCard(h, big) { try { return aiCardHTML(h, big); } catch (e) { return `<div class="card small muted">Couldn't show this analysis (${esc(h.at || '')}).</div>`; } }
 function viewAI() {
   if (!settings.aiKey) {
     $('#view').innerHTML = `<div class="card"><b>AI coach</b><div class="small muted" style="margin-top:6px">Tap Update any time and Claude looks at your recent food, weight, supplements and Garmin data, then suggests what to do next. Uses your own Claude API key (about 1–2¢ per update with Sonnet).</div>
@@ -105,8 +121,8 @@ function viewAI() {
   const spent = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).reduce((a, h) => a + (h.cost || 0), 0);
   $('#view').innerHTML = `<button class="btn" id="aiup" ${aiBusy ? 'disabled' : ''}>${aiBusy ? '✦ Analyzing your data…' : '✦ Update'}</button>
     <div class="small muted" style="text-align:center;margin:6px 0 10px">${latest ? (() => { const n = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).length; return `Last 30 days: ${n} update${n === 1 ? '' : 's'} · about $${spent.toFixed(2)}`; })() : 'Looks at your last 14 days, your goal and what you have eaten today.'}</div>
-    ${latest ? aiCardHTML(latest, true) : '<div class="empty">No analysis yet. Tap Update.</div>'}
-    ${older.length ? `<h2>Earlier</h2>${older.slice(0, 10).map(h => aiCardHTML(h, false)).join('')}` : ''}
+    ${latest ? safeCard(latest, true) : '<div class="empty">No analysis yet. Tap Update.</div>'}
+    ${older.length ? `<h2>Earlier</h2>${older.slice(0, 10).map(h => safeCard(h, false)).join('')}` : ''}
     <div class="small muted" style="margin:12px 4px">Sends a summary of your numbers (not photos) to Claude through your API key. Estimates, not medical advice.</div>`;
   $('#aiup').onclick = aiUpdate;
 }
