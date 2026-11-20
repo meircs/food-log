@@ -33,14 +33,14 @@ const SEED = [
   ['Nature Valley Crunchy, roasted almond', 'serving', '1 pouch (2 bars, 42 g)', 42, 190, 4, 29, 7],
   ['Kirkland Soft & Chewy granola bar, choc chip', 'serving', '1 bar (24 g)', 24, 100, 1, 17, 3],
   ['Sour cream, Gay Lea 14%', '100', '1 tbsp', 15, 180, 3, 4, 14],
-  ['Activia berry yogurt 2.4%', '100', '3/4 cup', 175, 92, 3.8, 13, 2.4],
+  ['Activia berry yogurt 2.4%', '100', '3/4 cup', 175, 92, 3.8, 13, 2.4, 0, 0, 650],
   ['Plain yogurt', '100', '3/4 cup', 175, 70, 5, 6, 3],
   ['Pulmuone teriyaki stir-fry udon', 'serving', '1 pack', 220, 400, 8, 80, 7],
   ['Udon stir-fry with vegetables (home)', 'serving', '1 bowl (~300 g)', 300, 400, 10, 70, 8],
   ["Soup's On roasted red pepper & gouda soup", 'serving', '1 bowl (350 ml)', null, 200, 7, 18, 11],
   ['Chicken souvlaki box (half)', 'serving', 'half box', null, 425, 23, 48, 15],
-].map(([name, basis, servingLabel, servingGrams, kcal, p, c, f, caf = 0, alc = 0]) =>
-  ({ name, basis, servingLabel, servingGrams, kcal, p, c, f, caf, alc }));
+].map(([name, basis, servingLabel, servingGrams, kcal, p, c, f, caf = 0, alc = 0, packGrams = null]) =>
+  ({ name, basis, servingLabel, servingGrams, kcal, p, c, f, caf, alc, packGrams }));
 
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack', 'drink'];
 
@@ -48,6 +48,7 @@ const MEALS = ['breakfast', 'lunch', 'dinner', 'snack', 'drink'];
 let foods = store.get('foods', null);
 if (!foods) { foods = SEED.map(f => ({ ...f, id: uid(), uses: 0, lastUsed: 0 })); store.set('foods', foods); }
 let entries = store.get('entries', []);
+foods.forEach(f => { if (f.packGrams === undefined && /^Activia berry yogurt/.test(f.name)) f.packGrams = 650; });
 let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-health', ghPath: 'data/food.csv', ghLibPath: 'data/food_library.json', ghSuppPath: 'data/supplements.csv', ghToken: '' }, store.get('settings', {}));
 const state = { tab: 'today', date: todayStr(), q: '', fq: '' };
 
@@ -98,10 +99,12 @@ function calc(food, qty, mode) {
   else factor = mode === 'g' ? (food.servingGrams ? qty / food.servingGrams : 0) : qty;
   return { kcal: food.kcal * factor, p: food.p * factor, c: food.c * factor, f: food.f * factor, caf: (food.caf || 0) * factor, alc: (food.alc || 0) * factor };
 }
-function amountText(food, qty, mode) {
-  if (mode === 'g') return `${r1(qty)} ${food.basis === '100' ? (food.unit || 'g') : 'g'}`;
-  const lbl = food.servingLabel || 'serving';
-  return qty === 1 ? lbl : `${r1(qty)} × ${lbl.replace(/^1 /, '')}`;
+function scale(n, k) { return Object.fromEntries(Object.entries(n).map(([key, v]) => [key, v * k])); }
+function amountText(food, qty, mode, pct = 100) {
+  let t;
+  if (mode === 'g') t = `${r1(qty)} ${food.basis === '100' ? (food.unit || 'g') : 'g'}`;
+  else { const lbl = food.servingLabel || 'serving'; t = qty === 1 ? lbl : `${r1(qty)} × ${lbl.replace(/^1 /, '')}`; }
+  return pct < 100 ? `${r0(pct)}% of ${t}` : t;
 }
 function totals(list) {
   return list.reduce((a, e) => ({ kcal: a.kcal + e.kcal, p: a.p + e.p, c: a.c + e.c, f: a.f + e.f }), { kcal: 0, p: 0, c: 0, f: 0 });
@@ -200,7 +203,8 @@ function editEntry(e) {
   const food = foods.find(f => f.id === e.foodId);
   openSheet(`<h3>${esc(e.name)}</h3><div class="muted small">${esc(e.amount)} · ${r0(e.kcal)} kcal · P ${r0(e.p)} · C ${r0(e.c)} · F ${r0(e.f)}</div>
     ${food && e.qty != null ? `<label>Amount (${e.mode === 'g' ? baseUnitLabel(food, 'g') : esc(food.servingLabel || 'servings')})</label>
-      <input type="text" inputmode="decimal" id="q" value="${e.qty}">` : ''}
+      <input type="text" inputmode="decimal" id="q" value="${e.qty}">
+      <label>Percent eaten</label><input type="text" inputmode="numeric" id="ep" value="${e.pct || 100}">` : ''}
     <div class="grid2"><div><label>Meal</label><select id="m">${MEALS.map(m => `<option ${m === e.meal ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
     <div><label>Time</label><input type="time" id="t" value="${esc(e.time)}"></div></div>
     <label>Date</label><input type="date" id="d" value="${esc(e.date)}">
@@ -214,7 +218,8 @@ function editEntry(e) {
       const qEl = $('#q', s);
       if (qEl && food) {
         const q = num(qEl.value); if (q <= 0) return toast('Enter an amount');
-        Object.assign(e, calc(food, q, e.mode), { qty: q, amount: amountText(food, q, e.mode) });
+        const pc = Math.max(1, Math.min(100, num($('#ep', s).value) || 100));
+        Object.assign(e, scale(calc(food, q, e.mode), pc / 100), { qty: q, pct: pc, amount: amountText(food, q, e.mode, pc) });
       }
       e.meal = $('#m', s).value; e.time = $('#t', s).value || e.time; e.date = $('#d', s).value || e.date;
       e.note = $('#n', s).value.trim(); e.exported = false; e.rev = (e.rev || 0) + 1;
@@ -288,6 +293,9 @@ function logFood(food) {
       <button data-m="serving">${esc(food.servingLabel || 'serving')}</button><button data-m="g">${food.basis === '100' ? esc(food.unit || 'g') : 'g'}</button></div>` : ''}
     <label id="ql"></label><input type="text" inputmode="decimal" id="q">
     <div class="chips" id="qc"></div>
+    <label>How much did you eat?</label>
+    <div class="row"><div class="seg" id="pct" style="flex:1"><button data-p="25">25%</button><button data-p="50">50%</button><button data-p="75">75%</button><button data-p="100">All</button></div>
+    <input type="text" inputmode="numeric" id="pcti" value="100" style="width:64px;text-align:center" aria-label="Percent eaten"><span class="muted">%</span></div>
     <div class="preview" id="pv"></div>
     <div class="grid2"><div><label>Meal</label><select id="m">${MEALS.map(m => `<option ${m === mealFor(t0) ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
     <div><label>Time</label><input type="time" id="t" value="${t0}"></div></div>
@@ -299,23 +307,30 @@ function logFood(food) {
       s.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
       $('#ql', s).textContent = m === 'g' ? `Amount (${food.basis === '100' ? (food.unit || 'g') : 'g'})` : `Number of servings (${food.servingLabel || 'serving'})`;
       const chips = m === 'g' ? [50, 100, 150, 200, 250] : [0.5, 1, 1.5, 2, 3];
-      $('#qc', s).innerHTML = chips.map(c => `<button class="chip" data-v="${c}">${c}</button>`).join('');
-      $('#qc', s).querySelectorAll('.chip').forEach(c => c.onclick = () => { q.value = c.dataset.v; upd(); });
+      $('#qc', s).innerHTML = chips.map(c => `<button class="chip" data-v="${c}">${c}</button>`).join('') +
+        (food.packGrams && canG ? `<button class="chip" id="pack">Whole pack (${food.packGrams} ${food.basis === '100' ? (food.unit || 'g') : 'g'})</button>` : '');
+      const pk = $('#pack', s); if (pk) pk.onclick = () => { if (mode !== 'g') setMode('g'); q.value = food.packGrams; upd(); };
+      $('#qc', s).querySelectorAll('.chip[data-v]').forEach(c => c.onclick = () => { q.value = c.dataset.v; upd(); });
       upd();
     };
+    let pct = 100;
+    const setPct = v => { pct = Math.max(1, Math.min(100, Math.round(v) || 100)); $('#pcti', s).value = pct;
+      s.querySelectorAll('#pct button').forEach(b => b.classList.toggle('on', +b.dataset.p === pct)); upd(); };
+    s.querySelectorAll('#pct button').forEach(b => b.onclick = () => setPct(+b.dataset.p));
+    $('#pcti', s).oninput = () => { const v = num($('#pcti', s).value); if (v > 0) { pct = Math.min(100, v); s.querySelectorAll('#pct button').forEach(b => b.classList.toggle('on', +b.dataset.p === pct)); upd(); } };
     const upd = () => {
-      const n = calc(food, num(q.value), mode);
+      const n = scale(calc(food, num(q.value), mode), pct / 100);
       $('#pv', s).innerHTML = `<b>${r0(n.kcal)} kcal</b> · P ${r1(n.p)} g · C ${r1(n.c)} g · F ${r1(n.f)} g${n.caf ? ` · ☕ ${r0(n.caf)} mg` : ''}${n.alc ? ` · 🍺 ${r1(n.alc)}` : ''}`;
     };
     s.querySelectorAll('#seg button').forEach(b => b.onclick = () => setMode(b.dataset.m));
     q.oninput = upd;
     $('#t', s).onchange = () => { $('#m', s).value = mealFor($('#t', s).value || t0); };
-    setMode(mode);
+    setMode(mode); setPct(100);
     $('#go', s).onclick = () => {
       const qty = num(q.value); if (qty <= 0) return toast('Enter an amount');
-      const n = calc(food, qty, mode); const time = $('#t', s).value || t0;
+      const n = scale(calc(food, qty, mode), pct / 100); const time = $('#t', s).value || t0;
       entries.push({ id: uid(), date: state.date, time, meal: $('#m', s).value, foodId: food.id, name: food.name,
-        qty, mode, amount: amountText(food, qty, mode), ...n, exported: false, created: Date.now() });
+        qty, mode, pct, amount: amountText(food, qty, mode, pct), ...n, exported: false, created: Date.now() });
       Object.assign(food, { uses: (food.uses || 0) + 1, lastUsed: Date.now(), lastQty: qty, lastMode: mode });
       saveEntries(); saveFoods(false); closeSheet();
       state.q = ''; state.tab = 'today'; render(); toast(`Added ${r0(n.kcal)} kcal`);
@@ -625,6 +640,7 @@ function editFood(food, after) {
     <div class="grid2"><div><label>Serving name</label><input type="text" id="sl" value="${esc(f.servingLabel || '')}" placeholder="e.g. 1 bar"></div>
     <div><label>Serving weight (g/ml)</label><input type="text" inputmode="decimal" id="sg" value="${f.servingGrams ?? ''}" placeholder="optional"></div></div>
     <div class="small muted" id="hint" style="margin-top:4px"></div>
+    <label>Package size (g/ml), optional</label><input type="text" inputmode="decimal" id="pk" value="${f.packGrams ?? ''}" placeholder="e.g. 650 for a 650 g tub">
     <div class="grid2"><div><label>Calories</label><input type="text" inputmode="decimal" id="k" value="${f.kcal}"></div>
     <div><label>Protein g</label><input type="text" inputmode="decimal" id="p" value="${f.p}"></div>
     <div><label>Carbs g</label><input type="text" inputmode="decimal" id="c" value="${f.c}"></div>
@@ -651,7 +667,7 @@ function editFood(food, after) {
       const sg = num($('#sg', s).value);
       const data = { name, basis, unit, servingLabel: $('#sl', s).value.trim() || (basis === 'serving' ? '1 serving' : ''), servingGrams: sg > 0 ? sg : null,
         kcal: num($('#k', s).value), p: num($('#p', s).value), c: num($('#c', s).value), f: num($('#fa', s).value), caf: num($('#caf', s).value), alc: num($('#alc', s).value),
-        barcode: f.barcode || null };
+        barcode: f.barcode || null, packGrams: num($('#pk', s).value) > 0 ? num($('#pk', s).value) : null };
       if (data.kcal <= 0 && data.p + data.c + data.f <= 0 && !/water|bubly|diet|zero/i.test(name)) return toast('Enter calories');
       let saved;
       if (isNew) { saved = { id: uid(), uses: 0, lastUsed: 0, ...data }; foods.push(saved); }
@@ -721,20 +737,21 @@ function scanBarcode() {
 }
 const normCode = c => String(c).replace(/\D/g, '').replace(/^0+/, '');
 async function lookupOFF(code) {
-  const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_en,brands,nutriments,serving_size,serving_quantity,quantity`, { cache: 'no-store' });
+  const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_en,brands,nutriments,serving_size,serving_quantity,quantity,product_quantity`, { cache: 'no-store' });
   if (!r.ok) return null;
   const j = await r.json(); const p = j.product;
   if (j.status !== 1 || !p) return null;
   const n = p.nutriments || {};
   const name = [String(p.brands || '').split(',')[0].trim(), (p.product_name_en || p.product_name || '').trim()].filter(Boolean).join(' ') || 'Scanned product';
   const sq = num(p.serving_quantity);
+  const pq = num(p.product_quantity) || num(String(p.quantity || '').replace(/[^0-9.]/g, ''));
   const ml = /ml|l\b/i.test(String(p.quantity || '') + ' ' + String(p.serving_size || ''));
   let k100 = n['energy-kcal_100g']; if (k100 == null && n.energy_100g != null) k100 = n.energy_100g / 4.184;
   if (k100 != null) return { name, basis: '100', unit: ml ? 'ml' : 'g', servingLabel: p.serving_size || '', servingGrams: sq > 0 ? sq : null,
-    kcal: r1(k100), p: r1(n.proteins_100g), c: r1(n.carbohydrates_100g), f: r1(n.fat_100g), barcode: code, fromOFF: true };
+    kcal: r1(k100), p: r1(n.proteins_100g), c: r1(n.carbohydrates_100g), f: r1(n.fat_100g), barcode: code, fromOFF: true, packGrams: pq > 0 ? pq : null };
   let ks = n['energy-kcal_serving']; if (ks == null && n.energy_serving != null) ks = n.energy_serving / 4.184;
   if (ks != null) return { name, basis: 'serving', servingLabel: p.serving_size || '1 serving', servingGrams: sq > 0 ? sq : null,
-    kcal: r1(ks), p: r1(n.proteins_serving), c: r1(n.carbohydrates_serving), f: r1(n.fat_serving), barcode: code, fromOFF: true };
+    kcal: r1(ks), p: r1(n.proteins_serving), c: r1(n.carbohydrates_serving), f: r1(n.fat_serving), barcode: code, fromOFF: true, packGrams: pq > 0 ? pq : null };
   return { name, basis: '100', unit: ml ? 'ml' : 'g', servingLabel: p.serving_size || '', servingGrams: sq > 0 ? sq : null, barcode: code };
 }
 async function handleBarcode(code) {
@@ -941,7 +958,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v12 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v13 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
