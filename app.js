@@ -941,7 +941,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v11 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v12 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
@@ -990,6 +990,7 @@ document.addEventListener('visibilitychange', () => {
 });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(); });
 window.addEventListener('online', () => scheduleSync());
+setInterval(() => { if (document.visibilityState === 'visible') sync(false); }, 60000);
 state.lastSeenToday = state.date;
 render();
 scheduleSync();
