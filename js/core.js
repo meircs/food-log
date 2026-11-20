@@ -1,0 +1,149 @@
+'use strict';
+/* Food log: storage, seed library, state, helpers, sheets and app chrome.
+   Data lives in this browser's localStorage and syncs to the garmin-health repo. */
+// ---------- storage ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('fl.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('fl.' + k, JSON.stringify(v)); return true; } catch (e) { toast('Could not save. Storage is blocked or full.'); return false; } }
+};
+
+// ---------- seed library (from food.csv, Nov 2026) ----------
+// basis '100' = values per 100 g (or ml); basis 'serving' = values per one serving.
+const SEED = [
+  ['Egg, large', 'serving', '1 egg', 50, 72, 6.3, 0.4, 4.8],
+  ['Cheese, semi-hard (cheddar/gouda)', '100', '1 slice', 20, 380, 25, 1.5, 30],
+  ['Cooking oil or butter', '100', '1 tsp', 5, 850, 0, 0, 95],
+  ['Onion', '100', '1/2 onion', 55, 40, 1.1, 9, 0.1],
+  ['Chicken breast, cooked', '100', '', null, 165, 31, 0, 3.6],
+  ['Lean ground lamb, cooked', '100', '', null, 250, 26, 0, 16],
+  ['Spaghetti, cooked', '100', '1 cup', 140, 158, 5.8, 31, 0.9],
+  ['White rice, cooked', '100', '1 cup', 160, 130, 2.7, 28, 0.3],
+  ['Naan / flatbread', '100', '1 piece', 100, 290, 9, 50, 6],
+  ['Banana, medium', 'serving', '1 banana', 120, 105, 1.3, 27, 0.4],
+  ['Croissant, plain butter', 'serving', '1 croissant', 60, 240, 5, 27, 13],
+  ['Latte, medium, 2% milk (2 shots)', 'serving', '1 cup (355 ml)', null, 180, 11, 17, 7, 130],
+  ['Black tea with milk, large mug', 'serving', '1 mug (350 ml)', null, 30, 2, 3, 1, 55],
+  ['Espresso shot', 'serving', '1 shot', null, 2, 0.1, 0, 0, 65],
+  ['Milk, 2%', '100', '1 cup (250 ml)', 250, 50, 3.4, 4.8, 2],
+  ['Apple juice, 100%', '100', '1 bottle (500 ml)', 500, 46, 0.1, 11.2, 0],
+  ['bubly sparkling water', 'serving', '1 can (355 ml)', null, 0, 0, 0, 0],
+  ['Beer, regular 5%', 'serving', '1 bottle (341 ml)', null, 145, 1.5, 13, 0, 0, 1],
+  ['KitKat mini bar', 'serving', '1 mini bar', 12, 60, 0.7, 7.7, 3, 2],
+  ['Nature Valley Crunchy, roasted almond', 'serving', '1 pouch (2 bars, 42 g)', 42, 190, 4, 29, 7],
+  ['Kirkland Soft & Chewy granola bar, choc chip', 'serving', '1 bar (24 g)', 24, 100, 1, 17, 3],
+  ['Sour cream, Gay Lea 14%', '100', '1 tbsp', 15, 180, 3, 4, 14],
+  ['Activia berry yogurt 2.4%', '100', '3/4 cup', 175, 92, 3.8, 13, 2.4, 0, 0, 650],
+  ['Plain yogurt', '100', '3/4 cup', 175, 70, 5, 6, 3],
+  ['Pulmuone teriyaki stir-fry udon', 'serving', '1 pack', 220, 400, 8, 80, 7],
+  ['Udon stir-fry with vegetables (home)', 'serving', '1 bowl (~300 g)', 300, 400, 10, 70, 8],
+  ["Soup's On roasted red pepper & gouda soup", 'serving', '1 bowl (350 ml)', null, 200, 7, 18, 11],
+  ['Chicken souvlaki box (half)', 'serving', 'half box', null, 425, 23, 48, 15],
+].map(([name, basis, servingLabel, servingGrams, kcal, p, c, f, caf = 0, alc = 0, packGrams = null]) =>
+  ({ name, basis, servingLabel, servingGrams, kcal, p, c, f, caf, alc, packGrams }));
+
+const MEALS = ['breakfast', 'lunch', 'dinner', 'snack', 'drink'];
+
+// ---------- state ----------
+let foods = store.get('foods', null);
+if (!foods) { foods = SEED.map(f => ({ ...f, id: uid(), uses: 0, lastUsed: 0 })); store.set('foods', foods); }
+let entries = store.get('entries', []);
+foods.forEach(f => { if (f.packGrams === undefined && /^Activia berry yogurt/.test(f.name)) f.packGrams = 650; });
+let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-health', ghPath: 'data/food.csv', ghLibPath: 'data/food_library.json', ghSuppPath: 'data/supplements.csv', ghToken: '' }, store.get('settings', {}));
+const state = { tab: 'today', date: todayStr(), q: '', fq: '' };
+
+let meals = store.get('meals', []);
+let supps = store.get('supps', []);       // [{id, name, dose}]
+let suppLog = store.get('suppLog', []);   // [{id, date, time, suppId, name, dose, exported}]
+const saveSupps = () => { store.set('supps', supps); bumpLib(); scheduleSync(); };
+const saveSuppLog = () => { store.set('suppLog', suppLog); scheduleSync(); };
+let remote = store.get('remote', []); // rows Claude logged in food.csv (read-only here)
+// changed=true marks the library for backup; usage stats alone don't trigger a backup commit.
+const saveFoods = (changed = true) => { store.set('foods', foods); if (changed) { bumpLib(); scheduleSync(); } };
+const saveMeals = () => { store.set('meals', meals); bumpLib(); scheduleSync(); };
+function bumpLib() { store.set('libRev', store.get('libRev', 0) + 1); store.set('libEdited', true); }
+const libDirty = () => store.get('libRev', 0) !== store.get('libSynced', 0);
+const saveEntries = () => { store.set('entries', entries); scheduleSync(); };
+const saveSettings = () => store.set('settings', settings);
+
+// ---------- helpers ----------
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function pad(n) { return String(n).padStart(2, '0'); }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function nowTime() { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function addDays(s, n) { const [y, m, d] = s.split('-').map(Number); const t = new Date(y, m - 1, d + n); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`; }
+function dateLabel(s) {
+  if (s === todayStr()) return 'Today';
+  if (s === addDays(todayStr(), -1)) return 'Yesterday';
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function mealFor(t) { const h = +t.slice(0, 2) + +t.slice(3) / 60; return h < 10.5 ? 'breakfast' : h < 15 ? 'lunch' : h < 17 ? 'snack' : h < 21.5 ? 'dinner' : 'snack'; }
+function r0(x) { return Math.round(x || 0); }
+function r1(x) { return Math.round((x || 0) * 10) / 10; }
+function num(v) { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function $(sel, root = document) { return root.querySelector(sel); }
+function toast(msg) {
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2600);
+}
+function baseUnit(f) { return f.basis === '100' ? (f.unit || 'g') : 'serving'; }
+
+// Nutrition for `qty` of `food` in `mode` ('serving' | 'g').
+function calc(food, qty, mode) {
+  let factor;
+  if (food.basis === '100') factor = mode === 'g' ? qty / 100 : qty * (food.servingGrams || 0) / 100;
+  else factor = mode === 'g' ? (food.servingGrams ? qty / food.servingGrams : 0) : qty;
+  return { kcal: food.kcal * factor, p: food.p * factor, c: food.c * factor, f: food.f * factor, caf: (food.caf || 0) * factor, alc: (food.alc || 0) * factor };
+}
+function scale(n, k) { return Object.fromEntries(Object.entries(n).map(([key, v]) => [key, v * k])); }
+function amountText(food, qty, mode, pct = 100) {
+  let t;
+  if (mode === 'g') t = `${r1(qty)} ${food.basis === '100' ? (food.unit || 'g') : 'g'}`;
+  else { const lbl = food.servingLabel || 'serving'; t = qty === 1 ? lbl : `${r1(qty)} × ${lbl.replace(/^1 /, '')}`; }
+  return pct < 100 ? `${r0(pct)}% of ${t}` : t;
+}
+function totals(list) {
+  return list.reduce((a, e) => ({ kcal: a.kcal + e.kcal, p: a.p + e.p, c: a.c + e.c, f: a.f + e.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+}
+
+// ---------- sheet ----------
+function openSheet(html, mount) {
+  closeSheet();
+  const bd = document.createElement('div'); bd.className = 'backdrop'; bd.id = 'bd';
+  bd.innerHTML = `<div class="sheet" role="dialog"><div class="grab"></div><button class="xbtn" id="xclose" aria-label="Close">✕</button>${html}</div>`;
+  bd.addEventListener('click', e => { if (e.target === bd) closeSheet(); });
+  bd.querySelector('#xclose').onclick = closeSheet;
+  document.body.appendChild(bd);
+  mount && mount(bd.firstElementChild);
+}
+function closeSheet() { stopScanner(); const b = $('#bd'); b && b.remove(); }
+
+// ---------- chrome ----------
+function renderHeader() {
+  const h = $('#hdr');
+  if (state.tab === 'today' || state.tab === 'add') {
+    h.innerHTML = `<button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
+      <h1 id="dlabel">${state.tab === 'add' ? 'Add to ' : ''}${esc(dateLabel(state.date))}</h1>
+      <button class="iconbtn" id="next" aria-label="Next day">›</button>`;
+    $('#prev').onclick = () => { state.date = addDays(state.date, -1); render(); };
+    $('#next').onclick = () => { state.date = addDays(state.date, 1); render(); };
+    $('#dlabel').onclick = () => { state.date = todayStr(); render(); };
+  } else {
+    h.innerHTML = `${state.tab === 'foods' ? '<button class="iconbtn" id="back" aria-label="Back">‹</button>' : ''}<h1>${{ foods: 'My foods & meals', stats: 'Stats', health: 'Health', more: 'More' }[state.tab]}</h1>${state.tab === 'foods' ? '<span style="width:40px"></span>' : ''}`;
+    const bk = $('#back'); if (bk) bk.onclick = () => { state.tab = 'more'; render(); };
+  }
+}
+function renderTabs() {
+  const pending = entries.filter(e => !e.exported).length;
+  const tabs = [['today', '◐', 'Today'], ['add', '＋', 'Add'], ['stats', '▥', 'Stats'], ['health', '♡', 'Health'], ['more', '☰', 'More']];
+  $('#tabs').innerHTML = tabs.map(([k, i, l]) =>
+    `<button data-t="${k}" class="${state.tab === k || (k === 'more' && state.tab === 'foods') ? 'on' : ''}"><span>${i}</span>${l}${k === 'more' && pending ? `<i class="badge">${pending}</i>` : ''}</button>`).join('');
+  $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; render(); window.scrollTo(0, 0); });
+}
+function render() {
+  renderHeader(); renderTabs();
+  ({ today: viewToday, add: viewAdd, stats: viewStats, health: viewHealth, foods: viewFoods, more: viewMore })[state.tab]();
+}
