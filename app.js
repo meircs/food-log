@@ -164,7 +164,7 @@ function viewToday() {
     const items = day.filter(e => e.meal === m); if (!items.length) continue;
     html += `<h2><span class="spread"><span>${cap(m)} · ${r0(totals(items).kcal)} kcal</span><button class="linkbtn" data-save="${m}">Save as meal</button></span></h2><div class="list">` +
       items.map(e => `<button class="item" data-id="${e.id}"><div class="grow"><div class="name">${esc(e.name)}</div>
-        <div class="small muted">${esc(e.time)}${e.remote ? ' · <span style="color:var(--accent)">via Claude</span>' : ' · ' + esc(e.amount)}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
+        <div class="small muted">${esc(e.time)}${e.amount ? ' · ' + esc(e.amount) : ''}${e.remote ? ' · <span style="color:var(--accent)">via Claude</span>' : ''}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
   }
   if (day.length) html += `<button class="btn secondary" id="goadd" style="margin-top:16px">＋ Add food</button>`;
   $('#view').innerHTML = html;
@@ -175,6 +175,7 @@ function viewToday() {
 
 function showRemote(e) {
   openSheet(`<h3>${esc(e.name)}</h3><div class="small" style="color:var(--accent);margin-top:2px">Logged via Claude</div>
+    ${e.full ? `<div class="small muted" style="margin-top:6px">${esc(e.full)}</div>` : ''}
     <div class="preview"><b>${r0(e.kcal)} kcal</b> · P ${r0(e.p)} g · C ${r0(e.c)} g · F ${r0(e.f)} g${e.caf ? ` · ☕ ${r0(e.caf)} mg` : ''}${e.alc ? ` · 🍺 ${r1(e.alc)}` : ''}</div>
     <div class="small muted" style="margin-top:8px">${esc(e.date)} ${esc(e.time)} · ${esc(e.meal)}${e.note ? ' · ' + esc(e.note) : ''}</div>
     <div class="small muted" style="margin-top:10px">To change or delete this one, tell Claude. It updates here on the next sync.</div>
@@ -588,6 +589,24 @@ function parseCSV(text) {
   if (cell || row.length) { row.push(cell); rows.push(row); }
   return rows;
 }
+// Turn a long logged description into a short title plus detail line.
+function prettyName(desc) {
+  const full = String(desc || '').trim();
+  let main = full, detail = '';
+  let cut = -1, depth = 0;
+  for (let i = 0; i < full.length - 1; i++) {
+    const ch = full[i];
+    if (ch === '(') depth++; else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (!depth && (ch === ',' || ch === ':') && full[i + 1] === ' ') { cut = i; break; }
+  }
+  if (cut > 0) { main = full.slice(0, cut); detail = full.slice(cut + 2); }
+  const strip = t => t.replace(/\([^)]*\)/g, '').replace(/~?\s?\d+(\.\d+)?\s?(g|ml|kg|oz)\b\s*(of\s)?/gi, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.;])/g, '$1').trim();
+  let title = strip(main) || strip(full) || 'Logged via Claude';
+  title = title.charAt(0).toUpperCase() + title.slice(1);
+  const qty = (main.match(/\(([^)]*)\)/) || [])[1];
+  detail = [qty, detail].filter(Boolean).join(', ').replace(/\s{2,}/g, ' ').trim();
+  return { title, detail };
+}
 async function pullRemote() {
   const g = await gh('GET');
   if (!g.ok) { store.set('syncError', g.status === 401 ? 'GitHub token rejected (401)' : g.status === 403 ? 'token has no access to this repo (403)' : g.status === 404 ? 'repo or file not found: give the token access to garmin-health (404)' : 'GitHub error ' + g.status); return; }
@@ -597,7 +616,7 @@ async function pullRemote() {
   const since = addDays(todayStr(), -60);
   remote = rows.filter(r => r.length >= head.length - 1 && r[ix('source')] !== 'app' && !/app:[a-z0-9]+/.test(r[ix('notes')] || '') && r[ix('date')] >= since)
     .map((r, i) => ({ id: 'r' + i + '-' + r[ix('date')] + r[ix('time')], remote: true, date: r[ix('date')], time: r[ix('time')] || '12:00',
-      meal: MEALS.includes(r[ix('meal')]) ? r[ix('meal')] : 'snack', name: r[ix('description')] || 'Logged via Claude', amount: '',
+      meal: MEALS.includes(r[ix('meal')]) ? r[ix('meal')] : 'snack', name: prettyName(r[ix('description')]).title, amount: prettyName(r[ix('description')]).detail, full: r[ix('description')] || '',
       kcal: num(r[ix('calories')]), p: num(r[ix('protein_g')]), c: num(r[ix('carbs_g')]), f: num(r[ix('fat_g')]),
       caf: num(r[ix('caffeine_mg')]), alc: num(r[ix('alcohol_drinks')]), note: r[ix('notes')] || '' }));
   store.set('remote', remote); store.set('remotePulled', Date.now());
@@ -732,7 +751,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v7 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v8 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
