@@ -707,7 +707,8 @@ function viewMore() {
         ? `On. New entries go to <b>${esc(settings.ghRepo)}/${esc(settings.ghPath)}</b> by themselves whenever you're online, and your foods and saved meals are backed up to <b>${esc(settings.ghLibPath)}</b>.`
         : 'Off. Paste a GitHub token (repo contents: read and write) to send entries to your health log automatically.'}</div>
       <div class="small" style="margin-top:6px">${esc(syncStatus() || 'Nothing waiting')}</div>
-      <label>GitHub token</label><input type="password" id="gt" value="${esc(settings.ghToken)}" placeholder="github_pat_…" autocomplete="off">
+      <label>GitHub token</label><input type="text" id="gt" value="${esc(settings.ghToken)}" placeholder="github_pat_…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="-webkit-text-security:disc">
+      ${settings.ghToken ? `<div class="small muted" style="margin-top:4px">Saved: ${esc(settings.ghToken.slice(0, 15))}… (${settings.ghToken.length} characters)</div>` : ''}
       <div class="grid2"><div><label>Repo</label><input type="text" id="gr" value="${esc(settings.ghRepo)}" autocapitalize="off"></div>
       <div><label>File</label><input type="text" id="gp" value="${esc(settings.ghPath)}" autocapitalize="off"></div></div>
       <div class="btnrow"><button class="btn secondary" id="gsave">Save &amp; test</button><button class="btn" id="gsync" ${settings.ghToken ? '' : 'disabled'}>Sync now</button></div>
@@ -731,7 +732,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v6 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v7 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
@@ -742,7 +743,8 @@ function viewMore() {
     if (confirm('Copied. Mark these entries as exported?')) { markDone(); toast('Marked as exported'); }
   };
   $('#gsave').onclick = async () => {
-    settings.ghToken = $('#gt').value.trim(); settings.ghRepo = $('#gr').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
+    settings.ghToken = $('#gt').value.replace(/\s+/g, '');
+    if (settings.ghToken && !/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(settings.ghToken)) { toast(`That doesn't look like a GitHub token (starts “${settings.ghToken.slice(0, 6)}”, ${settings.ghToken.length} chars). Copy it again.`); return; } settings.ghRepo = $('#gr').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
     settings.ghPath = $('#gp').value.trim().replace(/^\//, ''); saveSettings();
     if (!settings.ghToken) { store.set('syncError', ''); render(); return toast('Auto-sync turned off'); }
     if (!navigator.onLine) { render(); return toast('Saved. Will test when online.'); }
