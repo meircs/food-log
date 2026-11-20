@@ -566,8 +566,9 @@ async function sync(manual) {
   if (syncing) return;
   const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty();
   await syncEntries(manual);
-  if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullRemote(); } catch (e) { } }
-  if (!work) { if (manual) toast('Up to date'); return; }
+  if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullRemote(); } catch (e) { store.set('syncError', 'could not reach GitHub: ' + e.message); } }
+  { const l = $('#syncline'); if (l) l.textContent = syncStatus(); if (state.tab === 'more') render(); }
+  if (!work) { if (manual) toast(store.get('syncError', '') ? 'Sync problem: ' + store.get('syncError', '') : 'Up to date ✓'); return; }
   if (!navigator.onLine || !libDirty()) return;
   syncing = true;
   try { await syncLibrary(); if (manual) toast('Library backed up'); }
@@ -589,7 +590,8 @@ function parseCSV(text) {
 }
 async function pullRemote() {
   const g = await gh('GET');
-  if (!g.ok) return;
+  if (!g.ok) { store.set('syncError', g.status === 401 ? 'GitHub token rejected (401)' : g.status === 403 ? 'token has no access to this repo (403)' : g.status === 404 ? 'repo or file not found: give the token access to garmin-health (404)' : 'GitHub error ' + g.status); return; }
+  store.set('syncError', '');
   const rows = parseCSV(b64ToText((await g.json()).content || ''));
   const head = rows.shift() || []; const ix = k => head.indexOf(k);
   const since = addDays(todayStr(), -60);
@@ -635,7 +637,8 @@ function syncStatus() {
   if (!settings.ghToken) return pending ? `${pending} not exported · auto-sync is off (set it up in Export)` : '';
   const last = store.get('lastSync', 0);
   const err = store.get('syncError', '');
-  if (pending) return `${pending} waiting to sync${err ? ' · ' + err : navigator.onLine ? '' : ' · offline'}`;
+  if (err) return `⚠ ${pending ? pending + ' waiting · ' : ''}${err}`;
+  if (pending) return `${pending} waiting to sync${navigator.onLine ? '' : ' · offline'}`;
   return last ? `✓ Synced ${new Date(last).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '';
 }
 function b64ToText(b) { const bin = atob(b.replace(/\s/g, '')); return new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))); }
@@ -728,7 +731,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v5 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v6 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
