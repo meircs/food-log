@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Food">
+<meta name="theme-color" content="#f6f5f1">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>Food log</title>
+<style>
+:root{
+  --bg:#f6f5f1;--card:#fff;--ink:#1d1d1b;--muted:#77756f;--line:#e6e3dc;
+  --accent:#2f7d5b;--accent-soft:#e3f0e9;--warn:#c2552d;--warn-soft:#f8e6de;
+  --p:#3b6fb6;--c:#c9922c;--f:#a8508f;
+  --r:14px;--safe-b:env(safe-area-inset-bottom);--safe-t:env(safe-area-inset-top);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141413;--card:#1f1f1d;--ink:#f1efe9;--muted:#9c9a93;--line:#33322f;
+  --accent:#5fbf91;--accent-soft:#1f3a2d;--warn:#e98a63;--warn-soft:#3d241a;
+  --p:#7aa6e6;--c:#e2b45a;--f:#d487c2;
+}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+body{padding-top:var(--safe-t);padding-bottom:calc(68px + var(--safe-b))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 16px 8px;
+  display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+header h1{flex:1;margin:0;font-size:18px;font-weight:650;text-align:center}
+.iconbtn{border:0;background:var(--card);border:1px solid var(--line);border-radius:10px;
+  width:40px;height:36px;font-size:18px;line-height:1}
+main{padding:12px 14px 20px;max-width:620px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.big{font-size:34px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.row{display:flex;align-items:center;gap:10px}
+.spread{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:10px 0 4px}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:6px}
+.bar.over>i{background:var(--warn)}
+.macros{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.macro{background:var(--bg);border-radius:10px;padding:8px 10px}
+.macro b{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+.macro .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 4px 6px;font-weight:600}
+.list{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.item{display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid var(--line);width:100%;
+  background:none;border-left:0;border-right:0;border-bottom:0;text-align:left}
+.item:first-child{border-top:0}
+.item .grow{flex:1;min-width:0}
+.item .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .kcal{font-variant-numeric:tabular-nums;font-weight:600}
+.empty{padding:22px;text-align:center;color:var(--muted)}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:13px 16px;font-weight:600;
+  background:var(--accent);color:#fff;margin-top:10px}
+.btn.secondary{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:var(--warn-soft);color:var(--warn)}
+.btn:disabled{opacity:.45}
+.btnrow{display:flex;gap:8px}.btnrow .btn{flex:1}
+input[type=text],input[type=search],input[type=number],input[type=time],input[type=date],select{
+  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:16px}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:none;border-radius:8px;padding:8px 6px;font-size:14px}
+.seg button.on{background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 12px;font-size:14px}
+.preview{background:var(--accent-soft);border-radius:12px;padding:10px 12px;margin-top:12px;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--warn);color:#fff;
+  font-size:11px;line-height:18px;text-align:center;font-weight:700}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--card);
+  border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
+nav.tabs button{flex:1;border:0;background:none;padding:9px 0 8px;font-size:11px;color:var(--muted);position:relative}
+nav.tabs button span{display:block;font-size:21px;line-height:1.2}
+nav.tabs button.on{color:var(--accent);font-weight:600}
+nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px)}
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:620px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;
+  padding:8px 16px calc(18px + var(--safe-b));animation:up .18s ease-out}
+.sheet .grab{width:38px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 10px}
+.sheet h3{margin:0 0 4px;font-size:19px}
+@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+.toast{position:fixed;left:50%;bottom:calc(84px + var(--safe-b));transform:translateX(-50%);z-index:30;
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;max-width:90vw}
+.notice{background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<header id="hdr"></header>
+<main id="view"></main>
+<nav class="tabs" id="tabs"></nav>
+<script src="app.js"></script>
+</body>
+</html>
