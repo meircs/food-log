@@ -110,6 +110,14 @@ async def add_food(pg, query, qty=None, serving=False, pct=None, meal=None):
     await pg.click('#go'); await pg.wait_for_timeout(200)
 
 
+SWIPE_JS = """([sel, dx, dy]) => { const el = document.querySelector(sel); const r = el.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + Math.min(r.height / 2, 200);
+  const mk = (cx, cy) => new Touch({ identifier: 1, target: el, clientX: cx, clientY: cy });
+  el.dispatchEvent(new TouchEvent('touchstart', { touches: [mk(x, y)], changedTouches: [mk(x, y)], bubbles: true }));
+  for (let i = 1; i <= 5; i++) el.dispatchEvent(new TouchEvent('touchmove', { touches: [mk(x + dx * i / 5, y + dy * i / 5)], changedTouches: [mk(x + dx * i / 5, y + dy * i / 5)], bubbles: true }));
+  el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [mk(x + dx, y + dy)], bubbles: true })); }"""
+
+
 async def main():
     os.makedirs(SHOTS, exist_ok=True)
     url, httpd = serve()
@@ -165,6 +173,15 @@ async def main():
         check(await pg.locator('h2:has-text("Lunch") + .list .item', has_text='Banana').count() == 1, 'banana landed in lunch')
         await tab(pg, 'more')
         check(await pg.locator('#connedit').count() == 1, 'More shows compact "Connected" card')
+
+        print('Gestures')
+        await tab(pg, 'today'); await pg.evaluate(SWIPE_JS, ['#view', 150, 5]); await pg.wait_for_timeout(300)
+        check(await pg.inner_text('#dlabel') == 'Yesterday', 'swipe right goes to yesterday')
+        await pg.evaluate(SWIPE_JS, ['#view', -150, 5]); await pg.wait_for_timeout(300)
+        check(await pg.inner_text('#dlabel') == 'Today', 'swipe left comes back to today')
+        await pg.click('#wlog'); await pg.evaluate(SWIPE_JS, ['.sheet h3', 0, 200]); await pg.wait_for_timeout(400)
+        check(await pg.locator('#bd').count() == 0, 'swiping a panel down closes it')
+        check('user-scalable=no' in await pg.get_attribute('meta[name=viewport]', 'content'), 'zoom disabled')
 
         print('Weigh-in')
         before = repo.files['data/weight.csv']['text'].splitlines()

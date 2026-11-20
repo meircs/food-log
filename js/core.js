@@ -130,8 +130,8 @@ function renderHeader() {
     h.innerHTML = `<button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
       <h1 id="dlabel">${state.tab === 'add' ? 'Add to ' + (state.addMeal ? cap(state.addMeal) + ', ' : '') : ''}${esc(dateLabel(state.date))}</h1>
       <button class="iconbtn" id="next" aria-label="Next day">›</button>`;
-    $('#prev').onclick = () => { state.date = addDays(state.date, -1); render(); };
-    $('#next').onclick = () => { state.date = addDays(state.date, 1); render(); };
+    $('#prev').onclick = () => { state.date = addDays(state.date, -1); render('in-left'); };
+    $('#next').onclick = () => { state.date = addDays(state.date, 1); render('in-right'); };
     $('#dlabel').onclick = () => { state.date = todayStr(); render(); };
   } else {
     h.innerHTML = `${state.tab === 'foods' ? '<button class="iconbtn" id="back" aria-label="Back">‹</button>' : ''}<h1>${{ foods: 'My foods & meals', stats: 'Stats', health: 'Health', more: 'More' }[state.tab]}</h1>${state.tab === 'foods' ? '<span style="width:40px"></span>' : ''}`;
@@ -151,9 +151,10 @@ function renderTabs() {
   const tabs = [['today', 'today', 'Today'], ['add', 'add', 'Add'], ['stats', 'stats', 'Stats'], ['health', 'health', 'Health'], ['more', 'more', 'More']];
   $('#tabs').innerHTML = tabs.map(([k, i, l]) =>
     `<button data-t="${k}" class="${state.tab === k || (k === 'more' && state.tab === 'foods') ? 'on' : ''}"><span>${icon(i)}</span>${l}${k === 'more' && pending ? `<i class="badge">${pending}</i>` : ''}</button>`).join('');
-  $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; state.addMeal = null; render(); window.scrollTo(0, 0); });
+  $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; state.addMeal = null; render('fade'); window.scrollTo(0, 0); });
 }
-function render() {
+function render(anim) {
   renderHeader(); renderTabs();
+  const v = $('#view'); if (v && anim) { v.classList.remove('in-left', 'in-right', 'fade'); void v.offsetWidth; v.classList.add(anim); }
   ({ today: viewToday, add: viewAdd, stats: viewStats, health: viewHealth, foods: viewFoods, more: viewMore })[state.tab]();
 }
