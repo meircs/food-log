@@ -48,10 +48,15 @@ const MEALS = ['breakfast', 'lunch', 'dinner', 'snack', 'drink'];
 let foods = store.get('foods', null);
 if (!foods) { foods = SEED.map(f => ({ ...f, id: uid(), uses: 0, lastUsed: 0 })); store.set('foods', foods); }
 let entries = store.get('entries', []);
-let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-health', ghPath: 'data/food.csv', ghToken: '' }, store.get('settings', {}));
+let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-health', ghPath: 'data/food.csv', ghLibPath: 'data/food_library.json', ghToken: '' }, store.get('settings', {}));
 const state = { tab: 'today', date: todayStr(), q: '', fq: '' };
 
-const saveFoods = () => store.set('foods', foods);
+let meals = store.get('meals', []);
+// changed=true marks the library for backup; usage stats alone don't trigger a backup commit.
+const saveFoods = (changed = true) => { store.set('foods', foods); if (changed) { bumpLib(); scheduleSync(); } };
+const saveMeals = () => { store.set('meals', meals); bumpLib(); scheduleSync(); };
+function bumpLib() { store.set('libRev', store.get('libRev', 0) + 1); store.set('libEdited', true); }
+const libDirty = () => store.get('libRev', 0) !== store.get('libSynced', 0);
 const saveEntries = () => { store.set('entries', entries); scheduleSync(); };
 const saveSettings = () => store.set('settings', settings);
 
@@ -155,7 +160,7 @@ function viewToday() {
   if (!day.length) html += `<div class="list"><div class="empty">Nothing logged yet.<br><button class="btn" id="goadd" style="max-width:220px;margin:12px auto 0">Add food</button></div></div>`;
   for (const m of MEALS) {
     const items = day.filter(e => e.meal === m); if (!items.length) continue;
-    html += `<h2><span class="spread"><span>${cap(m)}</span><span>${r0(totals(items).kcal)} kcal</span></span></h2><div class="list">` +
+    html += `<h2><span class="spread"><span>${cap(m)} · ${r0(totals(items).kcal)} kcal</span><button class="linkbtn" data-save="${m}">Save as meal</button></span></h2><div class="list">` +
       items.map(e => `<button class="item" data-id="${e.id}"><div class="grow"><div class="name">${esc(e.name)}</div>
         <div class="small muted">${esc(e.time)} · ${esc(e.amount)}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
   }
@@ -163,6 +168,7 @@ function viewToday() {
   $('#view').innerHTML = html;
   const g = $('#goadd'); if (g) g.onclick = () => { state.tab = 'add'; render(); };
   $('#view').querySelectorAll('.item').forEach(b => b.onclick = () => editEntry(entries.find(e => e.id === b.dataset.id)));
+  $('#view').querySelectorAll('[data-save]').forEach(b => b.onclick = () => saveAsMeal(day.filter(e => e.meal === b.dataset.save), b.dataset.save));
 }
 
 function editEntry(e) {
@@ -216,17 +222,33 @@ function listResults() {
   let html = '';
   const row = f => `<button class="item" data-id="${f.id}"><div class="grow"><div class="name">${esc(f.name)}</div>
     <div class="small muted">${f.basis === '100' ? `${r0(f.kcal)} kcal / 100 ${esc(f.unit || 'g')}` : `${r0(f.kcal)} kcal / ${esc(f.servingLabel || 'serving')}`}</div></div><div class="muted">›</div></button>`;
+  const mealRow = m => { const t = totals(m.items); return `<button class="item" data-meal="${m.id}"><div class="grow"><div class="name">🍽 ${esc(m.name)}</div>
+    <div class="small muted">${m.items.length} item${m.items.length === 1 ? '' : 's'} · ${r0(t.kcal)} kcal · P ${r0(t.p)}</div></div><div class="muted">›</div></button>`; };
   if (q) {
+    const mh = meals.filter(m => matches(m.name, q));
+    if (mh.length) html += `<h2>Saved meals</h2><div class="list">${mh.map(mealRow).join('')}</div>`;
     const hits = foods.filter(f => matches(f.name, q)).sort((a, b) => (b.uses || 0) - (a.uses || 0));
-    html = hits.length ? `<h2>Results</h2><div class="list">${hits.map(row).join('')}</div>`
-      : `<div class="list"><div class="empty">No match for “${esc(q)}”.<br><button class="btn" id="mk" style="max-width:240px;margin:12px auto 0">Create “${esc(q)}”</button></div></div>`;
+    html += hits.length ? `<h2>Results</h2><div class="list">${hits.map(row).join('')}</div>`
+      : mh.length ? '' : `<div class="list"><div class="empty">No match for “${esc(q)}”.<br><button class="btn" id="mk" style="max-width:240px;margin:12px auto 0">Create “${esc(q)}”</button></div></div>`;
   } else {
+    if (meals.length) html += `<h2>Saved meals</h2><div class="list">${[...meals].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0)).map(mealRow).join('')}</div>`;
+    const prev = addDays(state.date, -1);
+    const yGroups = MEALS.map(m => ({ m, items: entries.filter(e => e.date === prev && e.meal === m) })).filter(g => g.items.length);
+    if (yGroups.length) html += `<h2>Copy from ${esc(dateLabel(prev).toLowerCase() === 'yesterday' ? 'yesterday' : dateLabel(prev))}</h2><div class="list">` +
+      yGroups.map(g => `<button class="item" data-copy="${g.m}"><div class="grow"><div class="name">↻ ${cap(g.m)}</div>
+        <div class="small muted">${esc(g.items.map(e => e.name).join(', '))}</div></div><div class="kcal">${r0(totals(g.items).kcal)}</div></button>`).join('') + '</div>';
     const recent = foods.filter(f => f.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 8);
     if (recent.length) html += `<h2>Recent</h2><div class="list">${recent.map(row).join('')}</div>`;
     html += `<h2>All foods</h2><div class="list">${[...foods].sort((a, b) => a.name.localeCompare(b.name)).map(row).join('')}</div>`;
   }
   $('#res').innerHTML = html;
-  $('#res').querySelectorAll('.item').forEach(b => b.onclick = () => logFood(foods.find(f => f.id === b.dataset.id)));
+  $('#res').querySelectorAll('.item[data-id]').forEach(b => b.onclick = () => logFood(foods.find(f => f.id === b.dataset.id)));
+  $('#res').querySelectorAll('.item[data-meal]').forEach(b => b.onclick = () => logMeal(meals.find(m => m.id === b.dataset.meal)));
+  $('#res').querySelectorAll('.item[data-copy]').forEach(b => b.onclick = () => {
+    const prev = addDays(state.date, -1);
+    const items = entries.filter(e => e.date === prev && e.meal === b.dataset.copy);
+    logMeal({ name: `${cap(b.dataset.copy)} from ${dateLabel(prev).toLowerCase()}`, items, keepTimes: true });
+  });
   const mk = $('#mk'); if (mk) mk.onclick = () => editFood({ name: q }, f => logFood(f));
 }
 
@@ -270,7 +292,7 @@ function logFood(food) {
       entries.push({ id: uid(), date: state.date, time, meal: $('#m', s).value, foodId: food.id, name: food.name,
         qty, mode, amount: amountText(food, qty, mode), ...n, exported: false, created: Date.now() });
       Object.assign(food, { uses: (food.uses || 0) + 1, lastUsed: Date.now(), lastQty: qty, lastMode: mode });
-      saveEntries(); saveFoods(); closeSheet();
+      saveEntries(); saveFoods(false); closeSheet();
       state.q = ''; state.tab = 'today'; render(); toast(`Added ${r0(n.kcal)} kcal`);
     };
     $('#ed', s).onclick = () => editFood(food, f => logFood(f));
@@ -311,6 +333,59 @@ function quickAdd() {
   });
 }
 
+// ---------- Saved meals ----------
+const ITEM_KEYS = ['foodId', 'name', 'qty', 'mode', 'amount', 'kcal', 'p', 'c', 'f', 'caf', 'alc'];
+const pick = (o, keys) => Object.fromEntries(keys.map(k => [k, o[k] ?? null]));
+function saveAsMeal(items, slot, existing) {
+  const def = existing ? existing.name : `${cap(slot)}: ${items.slice(0, 3).map(e => e.name.split(',')[0]).join(' + ')}`;
+  openSheet(`<h3>${existing ? 'Rename meal' : 'Save as meal'}</h3>
+    <div class="muted small">${items.length} item${items.length === 1 ? '' : 's'} · ${r0(totals(items).kcal)} kcal. Log them all in one tap from the Add tab.</div>
+    <label>Meal name</label><input type="text" id="nm" value="${esc(def)}">
+    <div class="list" style="margin-top:12px">${items.map(e => `<div class="item"><div class="grow"><div class="name">${esc(e.name)}</div><div class="small muted">${esc(e.amount)}</div></div><div class="kcal">${r0(e.kcal)}</div></div>`).join('')}</div>
+    <button class="btn" id="sv">Save meal</button>`, s => {
+    $('#sv', s).onclick = () => {
+      const name = $('#nm', s).value.trim(); if (!name) return toast('Enter a name');
+      if (existing) existing.name = name;
+      else meals.push({ id: uid(), name, items: items.map(e => pick(e, ITEM_KEYS)), lastUsed: 0 });
+      saveMeals(); closeSheet(); render(); toast('Meal saved');
+    };
+  });
+}
+function logMeal(meal) {
+  const t0 = state.date === todayStr() ? nowTime() : '12:00';
+  const tot = totals(meal.items);
+  const slot0 = meal.keepTimes ? meal.items[0].meal : mealFor(t0);
+  openSheet(`<h3>${esc(meal.name)}</h3><div class="muted small">Untick anything you didn't have this time.</div>
+    <div class="list" style="margin-top:10px">${meal.items.map((e, i) => `<label class="item" style="margin:0;color:var(--ink);font-size:16px">
+      <input type="checkbox" data-i="${i}" checked style="width:20px;height:20px"><div class="grow"><div class="name">${esc(e.name)}</div><div class="small muted">${esc(e.amount)}</div></div><div class="kcal">${r0(e.kcal)}</div></label>`).join('')}</div>
+    <div class="preview" id="pv"></div>
+    <div class="grid2"><div><label>Meal</label><select id="m">${MEALS.map(m => `<option ${m === slot0 ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+    <div><label>Time</label><input type="time" id="t" value="${meal.keepTimes ? meal.items[0].time : t0}"></div></div>
+    <button class="btn" id="go">Add to ${esc(dateLabel(state.date).toLowerCase() === 'today' ? 'today' : dateLabel(state.date))}</button>
+    ${meal.id ? '<div class="btnrow"><button class="btn secondary" id="rn">Rename</button><button class="btn danger" id="dl">Delete meal</button></div>' : ''}`, s => {
+    const chosen = () => [...s.querySelectorAll('input[data-i]')].filter(c => c.checked).map(c => meal.items[+c.dataset.i]);
+    const upd = () => { const t = totals(chosen()); $('#pv', s).innerHTML = `<b>${r0(t.kcal)} kcal</b> · P ${r0(t.p)} g · C ${r0(t.c)} g · F ${r0(t.f)} g`; };
+    s.querySelectorAll('input[data-i]').forEach(c => c.onchange = upd); upd();
+    $('#t', s).onchange = () => { $('#m', s).value = mealFor($('#t', s).value || t0); };
+    $('#go', s).onclick = () => {
+      const items = chosen(); if (!items.length) return toast('Nothing selected');
+      const time = $('#t', s).value || t0, slot = $('#m', s).value;
+      for (const it of items) {
+        entries.push({ ...pick(it, ITEM_KEYS), caf: it.caf || 0, alc: it.alc || 0, id: uid(), date: state.date, time, meal: slot, exported: false, created: Date.now() });
+        const f = foods.find(x => x.id === it.foodId); if (f) Object.assign(f, { uses: (f.uses || 0) + 1, lastUsed: Date.now() });
+      }
+      if (meal.id) meal.lastUsed = Date.now(), store.set('meals', meals);
+      saveEntries(); saveFoods(false); closeSheet(); state.q = ''; state.tab = 'today'; render();
+      toast(`Added ${items.length} item${items.length === 1 ? '' : 's'} · ${r0(totals(items).kcal)} kcal`);
+    };
+    const rn = $('#rn', s); if (rn) rn.onclick = () => saveAsMeal(meal.items, '', meal);
+    const dl = $('#dl', s); if (dl) dl.onclick = () => {
+      if (!confirm(`Delete saved meal “${meal.name}”? Logged entries stay.`)) return;
+      meals = meals.filter(m => m.id !== meal.id); saveMeals(); closeSheet(); render(); toast('Meal deleted');
+    };
+  });
+}
+
 // ---------- Foods ----------
 function viewFoods() {
   $('#view').innerHTML = `<input type="search" id="s" placeholder="Search…" value="${esc(state.fq)}" autocomplete="off">
@@ -320,7 +395,11 @@ function viewFoods() {
     $('#fl').innerHTML = `<h2>${list.length} foods</h2><div class="list">` + (list.length ? list.map(f => `<button class="item" data-id="${f.id}">
       <div class="grow"><div class="name">${esc(f.name)}</div><div class="small muted">${f.basis === '100' ? `per 100 ${esc(f.unit || 'g')}` : `per ${esc(f.servingLabel || 'serving')}`}: ${r0(f.kcal)} kcal · P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)}</div></div></button>`).join('')
       : '<div class="empty">No foods</div>') + '</div>';
-    $('#fl').querySelectorAll('.item').forEach(b => b.onclick = () => editFood(foods.find(f => f.id === b.dataset.id), () => render()));
+    const ml = meals.filter(m => !state.fq || matches(m.name, state.fq));
+    if (ml.length) $('#fl').insertAdjacentHTML('afterbegin', `<h2>${ml.length} saved meal${ml.length === 1 ? '' : 's'}</h2><div class="list">` + ml.map(m => `<button class="item" data-meal="${m.id}">
+      <div class="grow"><div class="name">🍽 ${esc(m.name)}</div><div class="small muted">${m.items.length} items · ${r0(totals(m.items).kcal)} kcal</div></div></button>`).join('') + '</div>');
+    $('#fl').querySelectorAll('.item[data-id]').forEach(b => b.onclick = () => editFood(foods.find(f => f.id === b.dataset.id), () => render()));
+    $('#fl').querySelectorAll('.item[data-meal]').forEach(b => b.onclick = () => logMeal(meals.find(m => m.id === b.dataset.meal)));
   };
   $('#s').oninput = e => { state.fq = e.target.value; draw(); };
   $('#newf').onclick = () => editFood(null, () => render());
@@ -465,6 +544,43 @@ async function handleBarcode(code) {
 }
 
 // ---------- GitHub sync ----------
+async function sync(manual) {
+  if (!settings.ghToken) { if (manual) toast('Add your GitHub token first'); return; }
+  if (syncing) return;
+  if (!entries.some(e => !e.exported) && !store.get('deleted', []).length && !libDirty()) { if (manual) toast('Already up to date'); return; }
+  await syncEntries(manual);
+  if (!navigator.onLine || !libDirty()) return;
+  syncing = true;
+  try { await syncLibrary(); if (manual) toast('Library backed up'); }
+  catch (e) { store.set('syncError', 'library: ' + (e.message === 'Failed to fetch' ? 'no connection' : e.message)); if (manual) toast('Library backup failed'); }
+  finally { syncing = false; const l = $('#syncline'); if (l) l.textContent = syncStatus(); if (state.tab === 'more') render(); }
+}
+async function syncLibrary() {
+  const rev = store.get('libRev', 0);
+  const body = JSON.stringify({ app: 'food-log', v: 2, updated: new Date().toISOString(), foods, meals }, null, 1) + '\n';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const g = await gh('GET', null, settings.ghLibPath);
+    if (g.status === 401 || g.status === 403) throw new Error('token rejected');
+    let sha; if (g.ok) sha = (await g.json()).sha; else if (g.status !== 404) throw new Error('GitHub error ' + g.status);
+    const p = await gh('PUT', { message: `Food app: library backup (${foods.length} foods, ${meals.length} meals)`, content: textToB64(body), ...(sha ? { sha } : {}) }, settings.ghLibPath);
+    if (p.status === 409 || p.status === 422) continue;
+    if (!p.ok) throw new Error('GitHub error ' + p.status);
+    store.set('libSynced', rev); return true;
+  }
+  throw new Error('file kept changing');
+}
+async function loadLibraryFromRepo(ask) {
+  const g = await gh('GET', null, settings.ghLibPath);
+  if (g.status === 404) { if (ask) toast('No library backup in the repo yet'); return false; }
+  if (!g.ok) { if (ask) toast('Could not read library backup'); return false; }
+  const d = JSON.parse(b64ToText((await g.json()).content || ''));
+  if (!Array.isArray(d.foods)) { if (ask) toast('Library file looks wrong'); return false; }
+  if (ask && !confirm(`Replace this phone's library with the repo backup (${d.foods.length} foods, ${(d.meals || []).length} meals)?`)) return false;
+  foods = d.foods; meals = d.meals || [];
+  store.set('foods', foods); store.set('meals', meals);
+  store.set('libRev', 0); store.set('libSynced', 0); store.set('libEdited', false);
+  render(); toast(`Library loaded: ${foods.length} foods, ${meals.length} meals`); return true;
+}
 let syncTimer = null, syncing = false;
 function scheduleSync() { clearTimeout(syncTimer); syncTimer = setTimeout(() => sync(false), 1500); }
 function syncStatus() {
@@ -477,16 +593,16 @@ function syncStatus() {
 }
 function b64ToText(b) { const bin = atob(b.replace(/\s/g, '')); return new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))); }
 function textToB64(t) { const by = new TextEncoder().encode(t); let bin = ''; for (let i = 0; i < by.length; i += 0x8000) bin += String.fromCharCode.apply(null, by.subarray(i, i + 0x8000)); return btoa(bin); }
-async function gh(method, body) {
-  const url = `https://api.github.com/repos/${settings.ghRepo}/contents/${settings.ghPath.split('/').map(encodeURIComponent).join('/')}`;
+async function gh(method, body, path = settings.ghPath) {
+  const url = `https://api.github.com/repos/${settings.ghRepo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
   return fetch(url, { method, cache: 'no-store', headers: { Authorization: `Bearer ${settings.ghToken}`, Accept: 'application/vnd.github+json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
 }
-async function sync(manual) {
+async function syncEntries(manual) {
   const pending = entries.filter(e => !e.exported);
   const deleted = store.get('deleted', []);
   const refresh = () => { const l = $('#syncline'); if (l) l.textContent = syncStatus(); renderTabs(); };
   if (!settings.ghToken) { if (manual) toast('Add your GitHub token first'); return; }
-  if (!pending.length && !deleted.length) { if (manual) toast('Already up to date'); return; }
+  if (!pending.length && !deleted.length) return;
   if (!navigator.onLine) { if (manual) toast('Offline. Will sync when back online.'); refresh(); return; }
   if (syncing) return; syncing = true;
   const ids = new Set([...pending.map(e => e.id), ...deleted]);
@@ -538,7 +654,7 @@ function viewMore() {
     ${!settings.ghToken && pending.length && (days === null || days >= 7) ? `<div class="notice">Your entries are stored only on this phone. ${days === null ? 'You haven’t exported yet.' : `Last export was ${days} days ago.`} Export at least once a week.</div>` : ''}
     <div class="card"><b>Auto-sync to your health repo</b>
       <div class="muted small" style="margin-top:4px">${settings.ghToken
-        ? `On. New entries go to <b>${esc(settings.ghRepo)}/${esc(settings.ghPath)}</b> by themselves whenever you're online.`
+        ? `On. New entries go to <b>${esc(settings.ghRepo)}/${esc(settings.ghPath)}</b> by themselves whenever you're online, and your foods and saved meals are backed up to <b>${esc(settings.ghLibPath)}</b>.`
         : 'Off. Paste a GitHub token (repo contents: read and write) to send entries to your health log automatically.'}</div>
       <div class="small" style="margin-top:6px">${esc(syncStatus() || 'Nothing waiting')}</div>
       <label>GitHub token</label><input type="password" id="gt" value="${esc(settings.ghToken)}" placeholder="github_pat_…" autocomplete="off">
@@ -561,10 +677,11 @@ function viewMore() {
       <button class="btn secondary" id="bk">Save backup file</button>
       <button class="btn secondary" id="rs">Restore from backup</button>
       <input type="file" id="rf" accept=".json,application/json" hidden>
+      ${settings.ghToken ? '<button class="btn secondary" id="lrl">Restore food library from repo</button>' : ''}
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v2 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v3 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
@@ -581,15 +698,16 @@ function viewMore() {
     if (!navigator.onLine) { render(); return toast('Saved. Will test when online.'); }
     try {
       const g = await gh('GET');
-      if (g.ok) { const f = await g.json(); const rows = b64ToText(f.content || '').trim().split('\n').length - 1; store.set('syncError', ''); toast(`Connected ✓ (${rows} rows in file)`); render(); sync(false); }
+      if (g.ok) { const f = await g.json(); const rows = b64ToText(f.content || '').trim().split('\n').length - 1; store.set('syncError', ''); toast(`Connected ✓ (${rows} rows in file)`); if (store.get('libEdited', false) || !(await loadLibraryFromRepo(false).catch(() => false))) bumpLib(); render(); sync(false); }
       else { store.set('syncError', g.status === 404 ? 'repo or file not found' : 'token rejected'); toast(g.status === 404 ? 'Repo or file not found (check token access)' : 'Token rejected'); render(); }
     } catch (e) { toast('Could not reach GitHub'); }
   };
   $('#gsync').onclick = () => sync(true);
+  const lrl = $('#lrl'); if (lrl) lrl.onclick = () => loadLibraryFromRepo(true).catch(() => toast('Could not reach GitHub'));
   $('#exa').onclick = () => shareFile(toCSV(entries), `food-all-${todayStr()}.csv`, 'text/csv');
   $('#unx').onclick = () => { if (confirm('Mark every entry as not exported? They will be included in the next export.')) { entries.forEach(e => e.exported = false); saveEntries(); render(); } };
   $('#svt').onclick = () => { settings.kcal = r0(num($('#tk').value)) || settings.kcal; settings.protein = r0(num($('#tp').value)) || settings.protein; saveSettings(); toast('Targets saved'); };
-  $('#bk').onclick = () => shareFile(JSON.stringify({ app: 'food-log', v: 1, at: new Date().toISOString(), foods, entries, settings }, null, 1), `food-backup-${todayStr()}.json`, 'application/json');
+  $('#bk').onclick = () => shareFile(JSON.stringify({ app: 'food-log', v: 2, at: new Date().toISOString(), foods, meals, entries, settings: { ...settings, ghToken: '' } }, null, 1), `food-backup-${todayStr()}.json`, 'application/json');
   $('#rs').onclick = () => $('#rf').click();
   $('#rf').onchange = async ev => {
     const file = ev.target.files[0]; if (!file) return;
@@ -597,7 +715,7 @@ function viewMore() {
       const d = JSON.parse(await file.text());
       if (d.app !== 'food-log' || !Array.isArray(d.foods) || !Array.isArray(d.entries)) throw new Error('bad');
       if (!confirm(`Replace everything on this phone with the backup (${d.foods.length} foods, ${d.entries.length} entries)?`)) return;
-      foods = d.foods; entries = d.entries; settings = Object.assign(settings, d.settings || {});
+      foods = d.foods; entries = d.entries; meals = d.meals || meals; const tok = settings.ghToken; settings = Object.assign(settings, d.settings || {}); settings.ghToken = settings.ghToken || tok; store.set('meals', meals);
       saveFoods(); saveEntries(); saveSettings(); render(); toast('Backup restored');
     } catch (e) { toast('That file is not a Food log backup'); }
   };
