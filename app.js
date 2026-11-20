@@ -106,8 +106,9 @@ function totals(list) {
 function openSheet(html, mount) {
   closeSheet();
   const bd = document.createElement('div'); bd.className = 'backdrop'; bd.id = 'bd';
-  bd.innerHTML = `<div class="sheet" role="dialog"><div class="grab"></div>${html}</div>`;
+  bd.innerHTML = `<div class="sheet" role="dialog"><div class="grab"></div><button class="xbtn" id="xclose" aria-label="Close">✕</button>${html}</div>`;
   bd.addEventListener('click', e => { if (e.target === bd) closeSheet(); });
+  bd.querySelector('#xclose').onclick = closeSheet;
   document.body.appendChild(bd);
   mount && mount(bd.firstElementChild);
 }
@@ -681,7 +682,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v3 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v4 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
