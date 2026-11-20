@@ -1121,7 +1121,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v14 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v15 · works offline</div>`;
   $('#gofoods').onclick = () => { state.tab = 'foods'; render(); window.scrollTo(0, 0); };
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
@@ -1165,7 +1165,19 @@ function viewMore() {
 
 // ---------- boot ----------
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) { }
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  const hadController = !!navigator.serviceWorker.controller;
+  // When a new version takes over, reload once so it shows straight away (skip while a panel is open).
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || window.__reloading) return;
+    const go = () => { window.__reloading = true; location.reload(); };
+    if (!$('#bd')) go(); else { const t = setInterval(() => { if (!$('#bd')) { clearInterval(t); go(); } }, 1000); }
+  });
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.update().catch(() => { });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => { }); });
+  }).catch(() => { });
+}
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.tab === 'today' && state.date !== todayStr() && state.lastSeenToday === state.date) { state.date = todayStr(); render(); }
 });
