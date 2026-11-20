@@ -34,7 +34,7 @@ PREVIOUS ADVICE (${prev ? new Date(prev.at).toLocaleString() : 'none'}): ${prev 
 }
 
 const AI_SYSTEM = `You are a concise, practical nutrition and training coach inside a personal food and health tracking app. The user is an adult man (169 cm) doing home/outdoor training, aiming to build muscle and lose fat. Use ONLY the data given; food numbers are estimates and some days may be under-logged (say so if a day looks incomplete rather than treating it as real intake). Compare with his targets and his own recent averages, notice trends and links (e.g. protein vs training days, late meals vs sleep), and give specific, realistic next steps with foods and amounts where useful. If he followed or ignored previous advice, acknowledge it briefly. Wellness guidance only: no diagnosis, no extreme diets; if something looks medically concerning, suggest checking with a doctor.
-Be brief: the headline is one short line, the summary is 2-3 sentences, each next step is one sentence. Report through the coach_report tool.`;
+Be brief: the headline is one short line, the summary is 2-3 sentences, each next step is one sentence. Always report by calling the coach_report tool exactly once, with no other text.`;
 const AI_TOOL = { name: 'coach_report', description: 'Report the coaching analysis to show in the app.', input_schema: { type: 'object', properties: {
   headline: { type: 'string', description: 'One line, max 80 characters' },
   summary: { type: 'string', description: '2-3 sentences with the key numbers' },
@@ -52,7 +52,7 @@ async function aiUpdate() {
     const model = settings.aiModel || 'claude-sonnet-5-5';
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': settings.aiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model, max_tokens: 2000, system: AI_SYSTEM, tools: [AI_TOOL], tool_choice: { type: 'tool', name: 'coach_report' }, messages: [{ role: 'user', content: aiContext() }] })
+      body: JSON.stringify({ model, max_tokens: 2000, system: AI_SYSTEM, tools: [AI_TOOL], tool_choice: { type: 'auto' }, messages: [{ role: 'user', content: aiContext() }] })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {

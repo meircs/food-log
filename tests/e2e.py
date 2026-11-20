@@ -220,7 +220,7 @@ async def main():
         await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-' + 'k' * 40); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(2500)
         check('Protein is your gap' in await pg.inner_text('.aimain') and '1.7¢' in await pg.inner_text('.aimain'), 'Update shows analysis with cost')
         ctxt = CLAUDE_CALLS[-1]['messages'][0]['content']
-        check('LAST 14 DAYS' in ctxt and 'GOAL' in ctxt and CLAUDE_CALLS[-1]['model'] == 'claude-sonnet-5-5' and CLAUDE_CALLS[-1]['tool_choice']['name'] == 'coach_report', 'request includes goal, 14 days of data, Sonnet, structured output')
+        check('LAST 14 DAYS' in ctxt and 'GOAL' in ctxt and CLAUDE_CALLS[-1]['model'] == 'claude-sonnet-5-5' and CLAUDE_CALLS[-1]['tools'][0]['name'] == 'coach_report' and CLAUDE_CALLS[-1]['tool_choice']['type'] == 'auto', 'request includes goal, 14 days of data, Sonnet, report tool')
         await pg.wait_for_timeout(2500)
         check('data/ai_history.json' in repo.files and 'Protein is your gap' in repo.files['data/ai_history.json']['text'], 'AI history synced to repo')
         check('sk-ant' not in json.dumps(repo.files), 'API key never written to the repo')

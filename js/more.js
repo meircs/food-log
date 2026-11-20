@@ -57,7 +57,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v27 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v28 · works offline</div>`;
   $('#gofoods').onclick = () => { state.tab = 'foods'; render(); window.scrollTo(0, 0); };
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   if ($('#exn')) $('#exn').onclick = async () => {
