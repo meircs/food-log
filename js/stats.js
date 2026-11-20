@@ -63,7 +63,7 @@ function targetModel() {
   const maint = obs && gAvg ? (obs + gAvg) / 2 : obs || gAvg;
   return { gAvg, gDays: gDays.length, obs, slope, kg, maint, off };
 }
-const GOALS = { 'lose0.5': ['Lose ~0.5 kg / week', -550, 2.0], 'lose0.25': ['Lose ~0.25 kg / week', -275, 1.8], maintain: ['Maintain weight', 0, 1.6], 'gain0.25': ['Gain ~0.25 kg / week', 275, 1.8] };
+const GOALS = { recomp: ['Build muscle & lose fat (recomp)', -300, 2.0], 'lose0.5': ['Lose ~0.5 kg / week', -550, 2.0], 'lose0.25': ['Lose ~0.25 kg / week', -275, 1.8], maintain: ['Maintain weight', 0, 1.6], 'gain0.25': ['Gain ~0.25 kg / week', 275, 1.8] };
 function suggestTargets(goal) {
   const m = targetModel(), g = GOALS[goal] || GOALS.maintain;
   if (!m.maint) return null;
