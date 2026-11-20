@@ -1,0 +1,117 @@
+'use strict';
+/* AI tab: on Update, sends a compact summary of recent food, weight, supplements and Garmin data
+   to the Claude API (with the user's own key) and shows the analysis. History syncs to the repo. */
+
+let aiHistory = store.get('aiHistory', []); // newest first: {at, model, cost, data:{headline, summary, next[], food_idea, watch}}
+const AI_MODELS = { 'claude-sonnet-5-5': ['Sonnet 5.5 (recommended)', 2, 10], 'claude-haiku-5-5': ['Haiku 5.5 (cheapest)', 0.1, 0.5], 'claude-opus-5-5': ['Opus 5.5 (deepest)', 4, 20] };
+let aiBusy = false;
+
+function aiContext() {
+  const all = [...entries, ...remote];
+  const days = Array.from({ length: 14 }, (_, i) => addDays(todayStr(), -i)).reverse();
+  const rows = days.map(d => {
+    const es = all.filter(e => e.date === d), t = totals(es), h = health[d] || {};
+    const late = es.some(e => e.time >= '21:00' && e.kcal >= 150), caf = es.some(e => e.time >= '14:00' && (e.caf || 0) > 0);
+    const alc = es.reduce((a, e) => a + (e.alc || 0), 0);
+    const wk = acts.filter(a => a.date === d && a.type !== 'walking').map(a => `${a.type} ${r0(a.dur)}min`).join('+');
+    const g = garmin[d];
+    return [d + (d === todayStr() ? '(today,partial)' : ''), es.length ? r0(t.kcal) : '-', es.length ? r0(t.p) : '-', es.length ? r0(t.c) : '-', es.length ? r0(t.f) : '-',
+      late ? 'late' : '', caf ? 'pm-caf' : '', alc ? r1(alc) + 'drinks' : '', wk || '', h.hrs != null ? r1(h.hrs) : '', h.score ?? '', h.hrv ?? '', h.rhr ?? '',
+      h.steps ?? '', h.bbHi ?? '', g && d < todayStr() ? r0(g.total) : ''].join(',');
+  });
+  const w = weights.filter(x => x.date >= addDays(todayStr(), -30)).map(x => `${x.date}:${r1(x.kg)}`).join(' ');
+  const sup = supps.map(x => { const k = days.slice(-7).filter(d => suppLog.some(l => l.date === d && l.suppId === x.id)).length; return `${x.name} ${k}/7`; }).join(', ');
+  const todayEs = all.filter(e => e.date === todayStr()).map(e => `${e.time} ${e.name} ${r0(e.kcal)}kcal ${r0(e.p)}gP`).join('; ');
+  const m = targetModel(), prev = aiHistory[0];
+  return `GOAL: ${(GOALS[settings.goal || 'maintain'] || GOALS.maintain)[0]}. Targets: ${settings.kcal} kcal, ${settings.protein} g protein/day. Height 169 cm. Garmin maintenance estimate: ${m.gAvg ? r0(m.gAvg) : 'unknown'} kcal/day.
+LAST 14 DAYS (date,kcal,protein_g,carbs_g,fat_g,late_meal,caffeine_after_2pm,alcohol,workouts,sleep_h,sleep_score,hrv_ms,resting_hr,steps,body_battery_high,garmin_kcal_burned):
+${rows.join('\n')}
+('-' = no food logged that day; food values are estimates.)
+WEIGHT (kg, last 30 days): ${w || 'none logged'}
+SUPPLEMENTS (days taken, last 7): ${sup || 'none tracked'}
+TODAY SO FAR: ${todayEs || 'nothing logged yet'} (time now ${nowTime()})
+PREVIOUS ADVICE (${prev ? new Date(prev.at).toLocaleString() : 'none'}): ${prev ? [prev.data.headline, ...(prev.data.next || [])].join(' | ') : 'none'}`;
+}
+
+const AI_SYSTEM = `You are a concise, practical nutrition and training coach inside a personal food and health tracking app. The user is an adult man (169 cm) doing home/outdoor training, aiming to build muscle and lose fat. Use ONLY the data given; food numbers are estimates and some days may be under-logged (say so if a day looks incomplete rather than treating it as real intake). Compare with his targets and his own recent averages, notice trends and links (e.g. protein vs training days, late meals vs sleep), and give specific, realistic next steps with foods and amounts where useful. If he followed or ignored previous advice, acknowledge it briefly. Wellness guidance only: no diagnosis, no extreme diets; if something looks medically concerning, suggest checking with a doctor.
+Reply with ONLY a JSON object, no markdown, exactly: {"headline": "<one line, max 80 chars>", "summary": "<2-3 sentences with key numbers>", "next": ["<3 specific actions for the rest of today/tomorrow>"], "food_idea": "<one concrete meal or snack idea that fits what's left today, with rough kcal and protein>", "watch": "<one thing to keep an eye on this week, or empty>"}`;
+
+async function aiUpdate() {
+  if (aiBusy) return;
+  if (!settings.aiKey) { toast('Add your Claude API key in More first'); return; }
+  if (!navigator.onLine) { toast("You're offline"); return; }
+  aiBusy = true; viewAI();
+  try {
+    try { await pullGarmin(true); } catch (e) { }
+    const model = settings.aiModel || 'claude-sonnet-5-5';
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': settings.aiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model, max_tokens: 900, system: AI_SYSTEM, messages: [{ role: 'user', content: aiContext() }] })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = (j.error && j.error.message) || '';
+      throw new Error(r.status === 401 ? 'API key rejected. Check it in More.' : /credit|balance/i.test(msg) ? 'Out of API credit. Top up at platform.claude.com.' : r.status === 429 ? 'Too many requests. Try again in a minute.' : `Claude API error ${r.status}${msg ? ': ' + msg : ''}`);
+    }
+    const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
+    let data; try { data = JSON.parse(text.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { data = { headline: 'Analysis', summary: text, next: [] }; }
+    const p = AI_MODELS[model] || AI_MODELS['claude-sonnet-5-5'], u = j.usage || {};
+    const cost = ((u.input_tokens || 0) * p[1] + (u.output_tokens || 0) * p[2]) / 1e6;
+    aiHistory.unshift({ at: new Date().toISOString(), model, cost, data }); aiHistory = aiHistory.slice(0, 30);
+    store.set('aiHistory', aiHistory); store.set('aiDirty', true); scheduleSync();
+    toast('Updated');
+  } catch (e) { toast(e.message === 'Failed to fetch' ? 'Could not reach Claude. Check your connection.' : e.message); }
+  finally { aiBusy = false; if (state.tab === 'ai') viewAI(); }
+}
+
+function aiCardHTML(h, big) {
+  const d = h.data || {}, at = new Date(h.at);
+  const when = at.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `<div class="card ${big ? 'aimain' : ''}">
+    <div class="spread"><span class="small muted">${esc(when)}</span><span class="small muted">${esc((AI_MODELS[h.model] || [h.model])[0].split(' (')[0])}${h.cost ? ` · ${h.cost < 0.01 ? '<1¢' : r1(h.cost * 100) + '¢'}` : ''}</span></div>
+    <div style="font-size:${big ? 19 : 16}px;font-weight:650;margin-top:6px">${esc(d.headline || '')}</div>
+    ${d.summary ? `<div style="margin-top:6px;line-height:1.45">${esc(d.summary)}</div>` : ''}
+    ${(d.next || []).length ? `<div class="small muted" style="margin-top:10px;font-weight:600">NEXT</div><ol style="margin:4px 0 0;padding-left:20px;line-height:1.45">${d.next.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+    ${d.food_idea ? `<div class="preview" style="margin-top:10px">🍽 ${esc(d.food_idea)}</div>` : ''}
+    ${d.watch ? `<div class="small" style="margin-top:8px"><b>Watch:</b> ${esc(d.watch)}</div>` : ''}</div>`;
+}
+
+function viewAI() {
+  if (!settings.aiKey) {
+    $('#view').innerHTML = `<div class="card"><b>AI coach</b><div class="small muted" style="margin-top:6px">Tap Update any time and Claude looks at your recent food, weight, supplements and Garmin data, then suggests what to do next. Uses your own Claude API key (about 1–2¢ per update with Sonnet).</div>
+      <button class="btn" id="aiset">Add API key</button></div>`;
+    $('#aiset').onclick = () => { state.tab = 'more'; render(); setTimeout(() => { const el = $('#aik'); if (el) el.scrollIntoView({ block: 'center' }); }, 50); };
+    return;
+  }
+  const [latest, ...older] = aiHistory;
+  const spent = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).reduce((a, h) => a + (h.cost || 0), 0);
+  $('#view').innerHTML = `<button class="btn" id="aiup" ${aiBusy ? 'disabled' : ''}>${aiBusy ? '✦ Analyzing your data…' : '✦ Update'}</button>
+    <div class="small muted" style="text-align:center;margin:6px 0 10px">${latest ? (() => { const n = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).length; return `Last 30 days: ${n} update${n === 1 ? '' : 's'} · about $${spent.toFixed(2)}`; })() : 'Looks at your last 14 days, your goal and what you have eaten today.'}</div>
+    ${latest ? aiCardHTML(latest, true) : '<div class="empty">No analysis yet. Tap Update.</div>'}
+    ${older.length ? `<h2>Earlier</h2>${older.slice(0, 10).map(h => aiCardHTML(h, false)).join('')}` : ''}
+    <div class="small muted" style="margin:12px 4px">Sends a summary of your numbers (not photos) to Claude through your API key. Estimates, not medical advice.</div>`;
+  $('#aiup').onclick = aiUpdate;
+}
+
+async function syncAI() {
+  if (!store.get('aiDirty', false)) return;
+  const path = settings.ghPath.replace(/[^/]*$/, '') + 'ai_history.json';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const g = await gh('GET', null, path); let sha, remoteH = [];
+    if (g.ok) { const f = await g.json(); sha = f.sha; try { remoteH = JSON.parse(b64ToText(f.content || '')).history || []; } catch (e) { } }
+    else if (g.status !== 404) throw new Error('AI history: GitHub error ' + g.status);
+    const byAt = new Map([...remoteH, ...aiHistory].map(h => [h.at, h]));
+    const merged = [...byAt.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30);
+    const p = await gh('PUT', { message: 'Food app: AI coach history', content: textToB64(JSON.stringify({ history: merged }, null, 1) + '\n'), ...(sha ? { sha } : {}) }, path);
+    if (p.status === 409 || p.status === 422) continue;
+    if (!p.ok) throw new Error('AI history: GitHub error ' + p.status);
+    aiHistory = merged; store.set('aiHistory', aiHistory); store.set('aiDirty', false); return;
+  }
+}
+async function pullAI() {
+  const g = await gh('GET', null, settings.ghPath.replace(/[^/]*$/, '') + 'ai_history.json'); if (!g.ok) return;
+  try { const remoteH = JSON.parse(b64ToText((await g.json()).content || '')).history || [];
+    const byAt = new Map([...aiHistory, ...remoteH].map(h => [h.at, h]));
+    aiHistory = [...byAt.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30); store.set('aiHistory', aiHistory);
+    if (state.tab === 'ai' && !aiBusy) viewAI(); } catch (e) { }
+}

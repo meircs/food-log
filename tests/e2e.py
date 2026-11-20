@@ -69,6 +69,18 @@ class Repo:
     def rows(self, path, marker='app:'): return [l for l in self.files.get(path, {'text': ''})['text'].splitlines() if marker in l]
 
 
+CLAUDE_CALLS = []
+async def claude(route):
+    req = route.request
+    if req.method == 'OPTIONS':
+        return await route.fulfill(status=204, headers={**H, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*'})
+    if req.headers.get('x-api-key') != 'sk-ant-' + 'k' * 40:
+        return await route.fulfill(status=401, content_type='application/json', headers=H, body=json.dumps({'error': {'message': 'invalid x-api-key'}}))
+    CLAUDE_CALLS.append(json.loads(req.post_data))
+    out = {'headline': 'Protein is your gap', 'summary': 'You averaged 68 g protein.', 'next': ['Add Greek yogurt', 'Strength session', 'Bed by 12'], 'food_idea': 'Chicken bowl ~600 kcal, 45 g protein', 'watch': 'Sleep under 6 h'}
+    await route.fulfill(status=200, content_type='application/json', headers=H, body=json.dumps({'content': [{'type': 'text', 'text': json.dumps(out)}], 'usage': {'input_tokens': 5000, 'output_tokens': 700}}))
+
+
 async def off(route):
     await route.fulfill(status=200, content_type='application/json', headers=H, body=json.dumps({'status': 1, 'product': {
         'product_name': 'Greek Yogurt 0%', 'brands': 'Testbrand', 'serving_size': '175 g', 'serving_quantity': 175, 'quantity': '650 g', 'product_quantity': 650,
@@ -89,7 +101,7 @@ def check(cond, msg):
 
 async def device(browser, repo, url, scheme='light', token=True):
     ctx = await browser.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True, color_scheme=scheme)
-    await ctx.route('https://api.github.com/**', repo.route); await ctx.route('https://world.openfoodfacts.org/**', off)
+    await ctx.route('https://api.github.com/**', repo.route); await ctx.route('https://world.openfoodfacts.org/**', off); await ctx.route('https://api.anthropic.com/**', claude)
     pg = await ctx.new_page(); pg.errors = []
     pg.on('pageerror', lambda e: pg.errors.append(str(e)))
     await pg.goto(url); await pg.wait_for_timeout(300)
@@ -165,7 +177,7 @@ async def main():
         check(len(repo.rows('data/supplements.csv')) == 1, 'supplement tick synced')
 
         print('UI shortcuts')
-        check(await pg.locator('#tabs button svg').count() == 5, 'tab bar uses drawn icons')
+        check(await pg.locator('#tabs button svg').count() == 6, 'tab bar uses drawn icons')
         await tab(pg, 'today'); await pg.click('[data-addm=lunch] >> nth=0')
         check('Lunch' in await pg.inner_text('#dlabel'), '＋ Lunch opens Add for lunch')
         await pg.fill('#s', 'banana'); await pg.click('#res .item[data-id]')
@@ -200,6 +212,19 @@ async def main():
         await tab(pg, 'today'); await pg.click('#view .item:has-text("Spaghetti with lean ground lamb and carrots"):has-text("via Claude")'); await pg.click('#rdel'); await pg.wait_for_timeout(2500)
         check(len(repo.files['data/food.csv']['text'].splitlines()) == n0 - 1 and not any('spaghetti with lean ground lamb' in l for l in repo.files['data/food.csv']['text'].splitlines()), 'delete removes only that row')
 
+        print('AI coach')
+        await tab(pg, 'ai')
+        check(await pg.locator('#aiset').count() == 1, 'AI tab asks for a key first')
+        await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-bad' + 'x' * 30); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(1500)
+        check(await pg.locator('.aimain').count() == 0, 'rejected key shows no analysis')
+        await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-' + 'k' * 40); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(2500)
+        check('Protein is your gap' in await pg.inner_text('.aimain') and '1.7¢' in await pg.inner_text('.aimain'), 'Update shows analysis with cost')
+        ctxt = CLAUDE_CALLS[-1]['messages'][0]['content']
+        check('LAST 14 DAYS' in ctxt and 'GOAL' in ctxt and CLAUDE_CALLS[-1]['model'] == 'claude-sonnet-5-5', 'request includes goal, 14 days of data, Sonnet model')
+        await pg.wait_for_timeout(2500)
+        check('data/ai_history.json' in repo.files and 'Protein is your gap' in repo.files['data/ai_history.json']['text'], 'AI history synced to repo')
+        check('sk-ant' not in json.dumps(repo.files), 'API key never written to the repo')
+
         print('Targets and Today burn')
         await tab(pg, 'more')
         check(await pg.locator('#tgsugg').count() == 1, 'suggested targets shown')
@@ -232,7 +257,7 @@ async def main():
         print('Offline')
         await pg.reload(); await pg.wait_for_timeout(1500); await ctx.set_offline(True)
         await pg.reload(wait_until='domcontentloaded'); await pg.wait_for_timeout(800)
-        check(await pg.locator('#tabs button').count() == 5, 'app loads offline')
+        check(await pg.locator('#tabs button').count() == 6, 'app loads offline')
         check(not pg.errors and not pg2.errors, 'no script errors on devices')
         await browser.close()
     httpd.shutdown(); print('\nAll tests passed.')

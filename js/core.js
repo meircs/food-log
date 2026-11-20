@@ -154,7 +154,7 @@ function renderHeader() {
     $('#next').onclick = () => slideDay(1);
     $('#dlabel').onclick = () => { state.date = todayStr(); render(); };
   } else {
-    h.innerHTML = `${state.tab === 'foods' ? '<button class="iconbtn" id="back" aria-label="Back">‹</button>' : ''}<h1>${{ foods: 'My foods & meals', stats: 'Stats', health: 'Health', more: 'More' }[state.tab]}</h1>${state.tab === 'foods' ? '<span style="width:40px"></span>' : ''}`;
+    h.innerHTML = `${state.tab === 'foods' ? '<button class="iconbtn" id="back" aria-label="Back">‹</button>' : ''}<h1>${{ foods: 'My foods & meals', stats: 'Stats', health: 'Health', ai: 'AI coach', more: 'More' }[state.tab]}</h1>${state.tab === 'foods' ? '<span style="width:40px"></span>' : ''}`;
     const bk = $('#back'); if (bk) bk.onclick = () => { state.tab = 'more'; render(); };
   }
 }
@@ -163,12 +163,13 @@ const ICONS = {
   add: '<path d="M12 5v14M5 12h14"/>',
   stats: '<path d="M5 20V11M12 20V5M19 20v-7"/>',
   health: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  ai: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>',
   more: '<path d="M5 7h14M5 12h14M5 17h14"/>'
 };
 const icon = k => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 function renderTabs() {
   const pending = entries.filter(e => !e.exported).length;
-  const tabs = [['today', 'today', 'Today'], ['add', 'add', 'Add'], ['stats', 'stats', 'Stats'], ['health', 'health', 'Health'], ['more', 'more', 'More']];
+  const tabs = [['today', 'today', 'Today'], ['add', 'add', 'Add'], ['stats', 'stats', 'Stats'], ['health', 'health', 'Health'], ['ai', 'ai', 'AI'], ['more', 'more', 'More']];
   $('#tabs').innerHTML = tabs.map(([k, i, l]) =>
     `<button data-t="${k}" class="${state.tab === k || (k === 'more' && state.tab === 'foods') ? 'on' : ''}"><span>${icon(i)}</span>${l}${k === 'more' && pending ? `<i class="badge">${pending}</i>` : ''}</button>`).join('');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; state.addMeal = null; render('fade'); window.scrollTo(0, 0); });
@@ -176,5 +177,5 @@ function renderTabs() {
 function render(anim) {
   renderHeader(); renderTabs();
   const v = $('#view'); if (v && anim) { v.classList.remove('in-left', 'in-right', 'fade'); void v.offsetWidth; v.classList.add(anim); }
-  ({ today: viewToday, add: viewAdd, stats: viewStats, health: viewHealth, foods: viewFoods, more: viewMore })[state.tab]();
+  ({ today: viewToday, add: viewAdd, stats: viewStats, health: viewHealth, ai: viewAI, foods: viewFoods, more: viewMore })[state.tab]();
 }

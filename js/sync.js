@@ -17,10 +17,12 @@ async function sync(manual) {
   if (syncing) return;
   const suppWork = suppLog.some(l => !l.exported) || store.get('suppDeleted', []).length;
   const wWork = weightLog.some(w => !w.exported) || store.get('wDeleted', []).length;
-  const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty() || suppWork || wWork || remoteOps.length;
+  const aiWork = store.get('aiDirty', false);
+  const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty() || suppWork || wWork || remoteOps.length || aiWork;
   await syncEntries(manual);
   if (navigator.onLine && (remoteOps.length || wWork)) { syncing = true; try { await syncRemoteOps(); await syncWeights(); } catch (e) { store.set('syncError', e.message); } finally { syncing = false; } }
-  if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullRemote(); } catch (e) { store.set('syncError', 'could not reach GitHub: ' + e.message); } }
+  if (navigator.onLine && aiWork) { try { await syncAI(); } catch (e) { } }
+  if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullAI(); } catch (e) { } try { await pullRemote(); } catch (e) { store.set('syncError', 'could not reach GitHub: ' + e.message); } }
   if (navigator.onLine) { try { await pullGarmin(false); } catch (e) { } }
   { const l = $('#syncline'); if (l) l.textContent = syncStatus(); if (state.tab === 'more') render(); }
   if (suppWork && navigator.onLine) { syncing = true; try { await syncSupps(); } catch (e) { store.set('syncError', e.message); } finally { syncing = false; } }

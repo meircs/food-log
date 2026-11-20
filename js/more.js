@@ -38,6 +38,12 @@ function viewMore() {
       <button class="btn secondary" id="cpy" ${pending.length ? '' : 'disabled'}>Copy new entries as text</button>
       <div class="small muted" style="margin-top:8px">${lastExp ? `Last export: ${new Date(lastExp).toLocaleString()}` : 'Not exported yet'} · ${entries.length} entries total</div>
     </div>`}
+    <div class="card"><b>AI coach</b>
+      <div class="small muted" style="margin-top:4px">Your Claude API key from platform.claude.com. Stays on this phone; only sent to Claude when you tap Update.</div>
+      <label>Claude API key</label><input type="text" id="aik" value="${esc(settings.aiKey || '')}" placeholder="sk-ant-…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="-webkit-text-security:disc">
+      ${settings.aiKey ? `<div class="small muted" style="margin-top:4px">Saved: ${esc(settings.aiKey.slice(0, 10))}… (${settings.aiKey.length} characters)</div>` : ''}
+      <label>Model</label><select id="aimodel">${Object.entries(AI_MODELS).map(([k, v]) => `<option value="${k}" ${k === (settings.aiModel || 'claude-sonnet-5-5') ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>
+      <button class="btn secondary" id="aisv">Save</button></div>
     <div class="card"><b>Daily targets</b>${targetsHTML()}
       <label>Or set your own</label><div class="grid2"><div><label>Calories</label><input type="text" inputmode="numeric" id="tk" value="${settings.kcal}"></div>
       <div><label>Protein g</label><input type="text" inputmode="numeric" id="tp" value="${settings.protein}"></div></div>
@@ -51,7 +57,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v25 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v26 · works offline</div>`;
   $('#gofoods').onclick = () => { state.tab = 'foods'; render(); window.scrollTo(0, 0); };
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   if ($('#exn')) $('#exn').onclick = async () => {
@@ -82,8 +88,11 @@ function viewMore() {
   const gsel = $('#goal'); if (gsel) gsel.onchange = () => { settings.goal = gsel.value; saveSettings(); render(); };
   const tga = $('#tgapply'); if (tga) tga.onclick = () => { const s2 = suggestTargets(settings.goal || 'maintain'); if (!s2) return;
     settings.kcal = s2.kcal; if (s2.protein) settings.protein = s2.protein; saveSettings(); render(); toast(`Targets set: ${fmt(settings.kcal)} kcal, ${settings.protein} g protein`); };
+  $('#aisv').onclick = () => { const k = $('#aik').value.replace(/\s+/g, '');
+    if (k && !/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(k)) return toast(`That doesn't look like a Claude API key (starts “${k.slice(0, 7)}”, ${k.length} chars)`);
+    settings.aiKey = k; settings.aiModel = $('#aimodel').value; saveSettings(); render(); toast(k ? 'AI key saved' : 'AI key removed'); };
   $('#svt').onclick = () => { settings.kcal = r0(num($('#tk').value)) || settings.kcal; settings.protein = r0(num($('#tp').value)) || settings.protein; saveSettings(); toast('Targets saved'); };
-  $('#bk').onclick = () => shareFile(JSON.stringify({ app: 'food-log', v: 2, at: new Date().toISOString(), foods, meals, entries, settings: { ...settings, ghToken: '' } }, null, 1), `food-backup-${todayStr()}.json`, 'application/json');
+  $('#bk').onclick = () => shareFile(JSON.stringify({ app: 'food-log', v: 2, at: new Date().toISOString(), foods, meals, entries, settings: { ...settings, ghToken: '', aiKey: '' } }, null, 1), `food-backup-${todayStr()}.json`, 'application/json');
   $('#rs').onclick = () => $('#rf').click();
   $('#rf').onchange = async ev => {
     const file = ev.target.files[0]; if (!file) return;
@@ -91,7 +100,7 @@ function viewMore() {
       const d = JSON.parse(await file.text());
       if (d.app !== 'food-log' || !Array.isArray(d.foods) || !Array.isArray(d.entries)) throw new Error('bad');
       if (!confirm(`Replace everything on this phone with the backup (${d.foods.length} foods, ${d.entries.length} entries)?`)) return;
-      foods = d.foods; entries = d.entries; meals = d.meals || meals; const tok = settings.ghToken; settings = Object.assign(settings, d.settings || {}); settings.ghToken = settings.ghToken || tok; store.set('meals', meals);
+      foods = d.foods; entries = d.entries; meals = d.meals || meals; const tok = settings.ghToken, aiK = settings.aiKey; settings = Object.assign(settings, d.settings || {}); settings.ghToken = settings.ghToken || tok; settings.aiKey = settings.aiKey || aiK; store.set('meals', meals);
       saveFoods(); saveEntries(); saveSettings(); render(); toast('Backup restored');
     } catch (e) { toast('That file is not a Food log backup'); }
   };
