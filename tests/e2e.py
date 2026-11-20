@@ -78,7 +78,7 @@ async def claude(route):
         return await route.fulfill(status=401, content_type='application/json', headers=H, body=json.dumps({'error': {'message': 'invalid x-api-key'}}))
     CLAUDE_CALLS.append(json.loads(req.post_data))
     out = {'headline': 'Protein is your gap', 'summary': 'You averaged 68 g protein.', 'next': ['Add Greek yogurt', 'Strength session', 'Bed by 12'], 'food_idea': 'Chicken bowl ~600 kcal, 45 g protein', 'watch': 'Sleep under 6 h'}
-    await route.fulfill(status=200, content_type='application/json', headers=H, body=json.dumps({'content': [{'type': 'text', 'text': json.dumps(out)}], 'usage': {'input_tokens': 5000, 'output_tokens': 700}}))
+    await route.fulfill(status=200, content_type='application/json', headers=H, body=json.dumps({'content': [{'type': 'tool_use', 'id': 't1', 'name': 'coach_report', 'input': out}], 'usage': {'input_tokens': 5000, 'output_tokens': 700}}))
 
 
 async def off(route):
@@ -220,7 +220,7 @@ async def main():
         await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-' + 'k' * 40); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(2500)
         check('Protein is your gap' in await pg.inner_text('.aimain') and '1.7¢' in await pg.inner_text('.aimain'), 'Update shows analysis with cost')
         ctxt = CLAUDE_CALLS[-1]['messages'][0]['content']
-        check('LAST 14 DAYS' in ctxt and 'GOAL' in ctxt and CLAUDE_CALLS[-1]['model'] == 'claude-sonnet-5-5', 'request includes goal, 14 days of data, Sonnet model')
+        check('LAST 14 DAYS' in ctxt and 'GOAL' in ctxt and CLAUDE_CALLS[-1]['model'] == 'claude-sonnet-5-5' and CLAUDE_CALLS[-1]['tool_choice']['name'] == 'coach_report', 'request includes goal, 14 days of data, Sonnet, structured output')
         await pg.wait_for_timeout(2500)
         check('data/ai_history.json' in repo.files and 'Protein is your gap' in repo.files['data/ai_history.json']['text'], 'AI history synced to repo')
         check('sk-ant' not in json.dumps(repo.files), 'API key never written to the repo')

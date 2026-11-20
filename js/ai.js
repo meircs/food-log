@@ -34,7 +34,13 @@ PREVIOUS ADVICE (${prev ? new Date(prev.at).toLocaleString() : 'none'}): ${prev 
 }
 
 const AI_SYSTEM = `You are a concise, practical nutrition and training coach inside a personal food and health tracking app. The user is an adult man (169 cm) doing home/outdoor training, aiming to build muscle and lose fat. Use ONLY the data given; food numbers are estimates and some days may be under-logged (say so if a day looks incomplete rather than treating it as real intake). Compare with his targets and his own recent averages, notice trends and links (e.g. protein vs training days, late meals vs sleep), and give specific, realistic next steps with foods and amounts where useful. If he followed or ignored previous advice, acknowledge it briefly. Wellness guidance only: no diagnosis, no extreme diets; if something looks medically concerning, suggest checking with a doctor.
-Reply with ONLY a JSON object, no markdown, exactly: {"headline": "<one line, max 80 chars>", "summary": "<2-3 sentences with key numbers>", "next": ["<3 specific actions for the rest of today/tomorrow>"], "food_idea": "<one concrete meal or snack idea that fits what's left today, with rough kcal and protein>", "watch": "<one thing to keep an eye on this week, or empty>"}`;
+Be brief: the headline is one short line, the summary is 2-3 sentences, each next step is one sentence. Report through the coach_report tool.`;
+const AI_TOOL = { name: 'coach_report', description: 'Report the coaching analysis to show in the app.', input_schema: { type: 'object', properties: {
+  headline: { type: 'string', description: 'One line, max 80 characters' },
+  summary: { type: 'string', description: '2-3 sentences with the key numbers' },
+  next: { type: 'array', items: { type: 'string' }, description: '3 specific actions for the rest of today / tomorrow, one sentence each' },
+  food_idea: { type: 'string', description: 'One concrete meal or snack that fits what is left today, with rough kcal and protein' },
+  watch: { type: 'string', description: 'One thing to keep an eye on this week, or empty' } }, required: ['headline', 'summary', 'next'] } };
 
 async function aiUpdate() {
   if (aiBusy) return;
@@ -46,15 +52,18 @@ async function aiUpdate() {
     const model = settings.aiModel || 'claude-sonnet-5-5';
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': settings.aiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model, max_tokens: 900, system: AI_SYSTEM, messages: [{ role: 'user', content: aiContext() }] })
+      body: JSON.stringify({ model, max_tokens: 2000, system: AI_SYSTEM, tools: [AI_TOOL], tool_choice: { type: 'tool', name: 'coach_report' }, messages: [{ role: 'user', content: aiContext() }] })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
       const msg = (j.error && j.error.message) || '';
       throw new Error(r.status === 401 ? 'API key rejected. Check it in More.' : /credit|balance/i.test(msg) ? 'Out of API credit. Top up at platform.claude.com.' : r.status === 429 ? 'Too many requests. Try again in a minute.' : `Claude API error ${r.status}${msg ? ': ' + msg : ''}`);
     }
+    const tool = (j.content || []).find(c => c.type === 'tool_use' && c.input);
     const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
-    let data; try { data = JSON.parse(text.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { data = { headline: 'Analysis', summary: text, next: [] }; }
+    let data = tool ? tool.input : null;
+    if (!data) { try { data = JSON.parse(text.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { data = salvage(text); } }
+    if (!data || !data.headline) throw new Error('Claude returned an incomplete answer. Tap Update again.');
     const p = AI_MODELS[model] || AI_MODELS['claude-sonnet-5-5'], u = j.usage || {};
     const cost = ((u.input_tokens || 0) * p[1] + (u.output_tokens || 0) * p[2]) / 1e6;
     aiHistory.unshift({ at: new Date().toISOString(), model, cost, data }); aiHistory = aiHistory.slice(0, 30);
@@ -64,8 +73,17 @@ async function aiUpdate() {
   finally { aiBusy = false; if (state.tab === 'ai') viewAI(); }
 }
 
+// Pull fields out of a JSON answer that was cut off mid-way.
+function salvage(text) {
+  if (!/^\s*\{/.test(text || '')) return text ? { headline: 'Analysis', summary: text, next: [] } : null;
+  const str = k => { const m = text.match(new RegExp('"' + k + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')); return m ? JSON.parse('"' + m[1] + '"') : ''; };
+  const nextM = text.match(/"next"\s*:\s*\[([\s\S]*)/);
+  const next = nextM ? [...nextM[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(m => JSON.parse('"' + m[1] + '"')) : [];
+  const h = str('headline'); return h ? { headline: h, summary: str('summary'), next, food_idea: str('food_idea'), watch: str('watch') } : null;
+}
 function aiCardHTML(h, big) {
-  const d = h.data || {}, at = new Date(h.at);
+  let d = h.data || {}; if (/^\s*\{/.test(d.summary || '')) d = salvage(d.summary) || d;
+  const at = new Date(h.at);
   const when = at.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `<div class="card ${big ? 'aimain' : ''}">
     <div class="spread"><span class="small muted">${esc(when)}</span><span class="small muted">${esc((AI_MODELS[h.model] || [h.model])[0].split(' (')[0])}${h.cost ? ` · ${h.cost < 0.01 ? '<1¢' : r1(h.cost * 100) + '¢'}` : ''}</span></div>
