@@ -52,6 +52,7 @@ let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-
 const state = { tab: 'today', date: todayStr(), q: '', fq: '' };
 
 let meals = store.get('meals', []);
+let remote = store.get('remote', []); // rows Claude logged in food.csv (read-only here)
 // changed=true marks the library for backup; usage stats alone don't trigger a backup commit.
 const saveFoods = (changed = true) => { store.set('foods', foods); if (changed) { bumpLib(); scheduleSync(); } };
 const saveMeals = () => { store.set('meals', meals); bumpLib(); scheduleSync(); };
@@ -142,7 +143,7 @@ function render() {
 
 // ---------- Today ----------
 function viewToday() {
-  const day = entries.filter(e => e.date === state.date).sort((a, b) => a.time.localeCompare(b.time));
+  const day = [...entries, ...remote].filter(e => e.date === state.date).sort((a, b) => a.time.localeCompare(b.time));
   const t = totals(day);
   const left = settings.kcal - t.kcal;
   const pct = Math.min(100, settings.kcal ? t.kcal / settings.kcal * 100 : 0);
@@ -163,13 +164,28 @@ function viewToday() {
     const items = day.filter(e => e.meal === m); if (!items.length) continue;
     html += `<h2><span class="spread"><span>${cap(m)} · ${r0(totals(items).kcal)} kcal</span><button class="linkbtn" data-save="${m}">Save as meal</button></span></h2><div class="list">` +
       items.map(e => `<button class="item" data-id="${e.id}"><div class="grow"><div class="name">${esc(e.name)}</div>
-        <div class="small muted">${esc(e.time)} · ${esc(e.amount)}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
+        <div class="small muted">${esc(e.time)}${e.remote ? ' · <span style="color:var(--accent)">via Claude</span>' : ' · ' + esc(e.amount)}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
   }
   if (day.length) html += `<button class="btn secondary" id="goadd" style="margin-top:16px">＋ Add food</button>`;
   $('#view').innerHTML = html;
   const g = $('#goadd'); if (g) g.onclick = () => { state.tab = 'add'; render(); };
-  $('#view').querySelectorAll('.item').forEach(b => b.onclick = () => editEntry(entries.find(e => e.id === b.dataset.id)));
+  $('#view').querySelectorAll('.item').forEach(b => b.onclick = () => { const e = day.find(x => x.id === b.dataset.id); e.remote ? showRemote(e) : editEntry(e); });
   $('#view').querySelectorAll('[data-save]').forEach(b => b.onclick = () => saveAsMeal(day.filter(e => e.meal === b.dataset.save), b.dataset.save));
+}
+
+function showRemote(e) {
+  openSheet(`<h3>${esc(e.name)}</h3><div class="small" style="color:var(--accent);margin-top:2px">Logged via Claude</div>
+    <div class="preview"><b>${r0(e.kcal)} kcal</b> · P ${r0(e.p)} g · C ${r0(e.c)} g · F ${r0(e.f)} g${e.caf ? ` · ☕ ${r0(e.caf)} mg` : ''}${e.alc ? ` · 🍺 ${r1(e.alc)}` : ''}</div>
+    <div class="small muted" style="margin-top:8px">${esc(e.date)} ${esc(e.time)} · ${esc(e.meal)}${e.note ? ' · ' + esc(e.note) : ''}</div>
+    <div class="small muted" style="margin-top:10px">To change or delete this one, tell Claude. It updates here on the next sync.</div>
+    <button class="btn secondary" id="dup">Log again now (in the app)</button>`, s => {
+    $('#dup', s).onclick = () => {
+      const t = state.date === todayStr() ? nowTime() : e.time;
+      entries.push({ id: uid(), date: state.date, time: t, meal: mealFor(t), foodId: null, name: e.name, qty: null, mode: 'serving', amount: '1 serving',
+        kcal: e.kcal, p: e.p, c: e.c, f: e.f, caf: e.caf, alc: e.alc, exported: false, created: Date.now() });
+      saveEntries(); closeSheet(); render(); toast('Logged again');
+    };
+  });
 }
 
 function editEntry(e) {
@@ -234,7 +250,7 @@ function listResults() {
   } else {
     if (meals.length) html += `<h2>Saved meals</h2><div class="list">${[...meals].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0)).map(mealRow).join('')}</div>`;
     const prev = addDays(state.date, -1);
-    const yGroups = MEALS.map(m => ({ m, items: entries.filter(e => e.date === prev && e.meal === m) })).filter(g => g.items.length);
+    const yGroups = MEALS.map(m => ({ m, items: [...entries, ...remote].filter(e => e.date === prev && e.meal === m) })).filter(g => g.items.length);
     if (yGroups.length) html += `<h2>Copy from ${esc(dateLabel(prev).toLowerCase() === 'yesterday' ? 'yesterday' : dateLabel(prev))}</h2><div class="list">` +
       yGroups.map(g => `<button class="item" data-copy="${g.m}"><div class="grow"><div class="name">↻ ${cap(g.m)}</div>
         <div class="small muted">${esc(g.items.map(e => e.name).join(', '))}</div></div><div class="kcal">${r0(totals(g.items).kcal)}</div></button>`).join('') + '</div>';
@@ -247,7 +263,7 @@ function listResults() {
   $('#res').querySelectorAll('.item[data-meal]').forEach(b => b.onclick = () => logMeal(meals.find(m => m.id === b.dataset.meal)));
   $('#res').querySelectorAll('.item[data-copy]').forEach(b => b.onclick = () => {
     const prev = addDays(state.date, -1);
-    const items = entries.filter(e => e.date === prev && e.meal === b.dataset.copy);
+    const items = [...entries, ...remote].filter(e => e.date === prev && e.meal === b.dataset.copy).map(e => e.remote ? { ...e, amount: '1 serving' } : e);
     logMeal({ name: `${cap(b.dataset.copy)} from ${dateLabel(prev).toLowerCase()}`, items, keepTimes: true });
   });
   const mk = $('#mk'); if (mk) mk.onclick = () => editFood({ name: q }, f => logFood(f));
@@ -548,14 +564,44 @@ async function handleBarcode(code) {
 async function sync(manual) {
   if (!settings.ghToken) { if (manual) toast('Add your GitHub token first'); return; }
   if (syncing) return;
-  if (!entries.some(e => !e.exported) && !store.get('deleted', []).length && !libDirty()) { if (manual) toast('Already up to date'); return; }
+  const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty();
   await syncEntries(manual);
+  if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullRemote(); } catch (e) { } }
+  if (!work) { if (manual) toast('Up to date'); return; }
   if (!navigator.onLine || !libDirty()) return;
   syncing = true;
   try { await syncLibrary(); if (manual) toast('Library backed up'); }
   catch (e) { store.set('syncError', 'library: ' + (e.message === 'Failed to fetch' ? 'no connection' : e.message)); if (manual) toast('Library backup failed'); }
   finally { syncing = false; const l = $('#syncline'); if (l) l.textContent = syncStatus(); if (state.tab === 'more') render(); }
 }
+function parseCSV(text) {
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (ch !== '\r') cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+async function pullRemote() {
+  const g = await gh('GET');
+  if (!g.ok) return;
+  const rows = parseCSV(b64ToText((await g.json()).content || ''));
+  const head = rows.shift() || []; const ix = k => head.indexOf(k);
+  const since = addDays(todayStr(), -60);
+  remote = rows.filter(r => r.length >= head.length - 1 && r[ix('source')] !== 'app' && !/app:[a-z0-9]+/.test(r[ix('notes')] || '') && r[ix('date')] >= since)
+    .map((r, i) => ({ id: 'r' + i + '-' + r[ix('date')] + r[ix('time')], remote: true, date: r[ix('date')], time: r[ix('time')] || '12:00',
+      meal: MEALS.includes(r[ix('meal')]) ? r[ix('meal')] : 'snack', name: r[ix('description')] || 'Logged via Claude', amount: '',
+      kcal: num(r[ix('calories')]), p: num(r[ix('protein_g')]), c: num(r[ix('carbs_g')]), f: num(r[ix('fat_g')]),
+      caf: num(r[ix('caffeine_mg')]), alc: num(r[ix('alcohol_drinks')]), note: r[ix('notes')] || '' }));
+  store.set('remote', remote); store.set('remotePulled', Date.now());
+  if (state.tab === 'today') render();
+}
+
 async function syncLibrary() {
   const rev = store.get('libRev', 0);
   const body = JSON.stringify({ app: 'food-log', v: 2, updated: new Date().toISOString(), foods, meals }, null, 1) + '\n';
@@ -682,7 +728,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v4 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v5 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
