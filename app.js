@@ -169,7 +169,7 @@ function viewToday() {
     const items = day.filter(e => e.meal === m); if (!items.length) continue;
     html += `<h2><span class="spread"><span>${cap(m)} · ${r0(totals(items).kcal)} kcal</span><button class="linkbtn" data-save="${m}">Save as meal</button></span></h2><div class="list">` +
       items.map(e => `<button class="item" data-id="${e.id}"><div class="grow"><div class="name">${esc(e.name)}</div>
-        <div class="small muted">${esc(e.time)}${e.amount ? ' · ' + esc(e.amount) : ''}${e.remote ? ' · <span style="color:var(--accent)">via Claude</span>' : ''}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
+        <div class="small muted">${esc(e.time)}${e.amount ? ' · ' + esc(e.amount) : ''}${e.remote ? ` · <span style="color:var(--accent)">${e.other ? 'other device' : 'via Claude'}</span>` : ''}</div></div><div class="kcal">${r0(e.kcal)}</div></button>`).join('') + `</div>`;
   }
   if (day.length) html += `<button class="btn secondary" id="goadd" style="margin-top:16px">＋ Add food</button>`;
   $('#view').innerHTML = html;
@@ -181,11 +181,11 @@ function viewToday() {
 }
 
 function showRemote(e) {
-  openSheet(`<h3>${esc(e.name)}</h3><div class="small" style="color:var(--accent);margin-top:2px">Logged via Claude</div>
+  openSheet(`<h3>${esc(e.name)}</h3><div class="small" style="color:var(--accent);margin-top:2px">${e.other ? 'Logged in the app on another device' : 'Logged via Claude'}</div>
     ${e.full ? `<div class="small muted" style="margin-top:6px">${esc(e.full)}</div>` : ''}
     <div class="preview"><b>${r0(e.kcal)} kcal</b> · P ${r0(e.p)} g · C ${r0(e.c)} g · F ${r0(e.f)} g${e.caf ? ` · ☕ ${r0(e.caf)} mg` : ''}${e.alc ? ` · 🍺 ${r1(e.alc)}` : ''}</div>
     <div class="small muted" style="margin-top:8px">${esc(e.date)} ${esc(e.time)} · ${esc(e.meal)}${e.note ? ' · ' + esc(e.note) : ''}</div>
-    <div class="small muted" style="margin-top:10px">To change or delete this one, tell Claude. It updates here on the next sync.</div>
+    <div class="small muted" style="margin-top:10px">${e.other ? 'To change or delete it, open the app on the device where you logged it.' : 'To change or delete this one, tell Claude. It updates here on the next sync.'}</div>
     <button class="btn secondary" id="dup">Log again now (in the app)</button>`, s => {
     $('#dup', s).onclick = () => {
       const t = state.date === todayStr() ? nowTime() : e.time;
@@ -802,8 +802,10 @@ async function pullRemote() {
   const rows = parseCSV(b64ToText((await g.json()).content || ''));
   const head = rows.shift() || []; const ix = k => head.indexOf(k);
   const since = addDays(todayStr(), -60);
-  remote = rows.filter(r => r.length >= head.length - 1 && r[ix('source')] !== 'app' && !/app:[a-z0-9]+/.test(r[ix('notes')] || '') && r[ix('date')] >= since)
-    .map((r, i) => ({ id: 'r' + i + '-' + r[ix('date')] + r[ix('time')], remote: true, date: r[ix('date')], time: r[ix('time')] || '12:00',
+  const mine = new Set([...entries.map(e => e.id), ...store.get('deleted', [])]);
+  const appId = r => ((r[ix('notes')] || '').match(/app:([a-z0-9]+)/) || [])[1];
+  remote = rows.filter(r => r.length >= head.length - 1 && r[ix('date')] >= since && !(appId(r) && mine.has(appId(r))))
+    .map((r, i) => ({ id: 'r' + i + '-' + r[ix('date')] + r[ix('time')], remote: true, other: !!appId(r), date: r[ix('date')], time: r[ix('time')] || '12:00',
       meal: MEALS.includes(r[ix('meal')]) ? r[ix('meal')] : 'snack', name: prettyName(r[ix('description')]).title, amount: prettyName(r[ix('description')]).detail, full: r[ix('description')] || '',
       kcal: num(r[ix('calories')]), p: num(r[ix('protein_g')]), c: num(r[ix('carbs_g')]), f: num(r[ix('fat_g')]),
       caf: num(r[ix('caffeine_mg')]), alc: num(r[ix('alcohol_drinks')]), note: r[ix('notes')] || '' }));
@@ -939,7 +941,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v10 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v11 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
