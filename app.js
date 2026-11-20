@@ -126,19 +126,19 @@ function renderHeader() {
     $('#next').onclick = () => { state.date = addDays(state.date, 1); render(); };
     $('#dlabel').onclick = () => { state.date = todayStr(); render(); };
   } else {
-    h.innerHTML = `<h1>${state.tab === 'foods' ? 'My foods' : 'Settings & export'}</h1>`;
+    h.innerHTML = `<h1>${state.tab === 'foods' ? 'My foods' : state.tab === 'stats' ? 'Stats' : 'Settings & export'}</h1>`;
   }
 }
 function renderTabs() {
   const pending = entries.filter(e => !e.exported).length;
-  const tabs = [['today', '◐', 'Today'], ['add', '＋', 'Add'], ['foods', '☰', 'Foods'], ['more', '⇪', 'Export']];
+  const tabs = [['today', '◐', 'Today'], ['add', '＋', 'Add'], ['stats', '▥', 'Stats'], ['foods', '☰', 'Foods'], ['more', '⇪', 'Export']];
   $('#tabs').innerHTML = tabs.map(([k, i, l]) =>
     `<button data-t="${k}" class="${state.tab === k ? 'on' : ''}"><span>${i}</span>${l}${k === 'more' && pending ? `<i class="badge">${pending}</i>` : ''}</button>`).join('');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; render(); window.scrollTo(0, 0); });
 }
 function render() {
   renderHeader(); renderTabs();
-  ({ today: viewToday, add: viewAdd, foods: viewFoods, more: viewMore })[state.tab]();
+  ({ today: viewToday, add: viewAdd, stats: viewStats, foods: viewFoods, more: viewMore })[state.tab]();
 }
 
 // ---------- Today ----------
@@ -349,6 +349,121 @@ function quickAdd() {
       saveEntries(); closeSheet(); state.tab = 'today'; render(); toast(`Added ${r0(k)} kcal`);
     };
   });
+}
+
+// ---------- Stats ----------
+let garmin = store.get('garmin', {});   // date -> {total, active}
+let weights = store.get('weights', []); // [{date, kg}]
+async function pullGarmin(force) {
+  if (!settings.ghToken || !navigator.onLine) return;
+  if (!force && Date.now() - store.get('garminPulled', 0) < 10 * 60000) return;
+  const dir = settings.ghPath.replace(/[^/]*$/, '');
+  const read = async f => { const g = await gh('GET', null, dir + f); return g.ok ? parseCSV(b64ToText((await g.json()).content || '')) : null; };
+  const [d, w] = await Promise.all([read('daily.csv'), read('weight.csv')]);
+  if (d) { const h = d.shift(); const iD = h.indexOf('date'), iT = h.indexOf('total_kcal'), iA = h.indexOf('active_kcal');
+    garmin = {}; d.forEach(r => { if (r[iD] && r[iT]) garmin[r[iD]] = { total: num(r[iT]), active: num(r[iA]) }; }); store.set('garmin', garmin); }
+  if (w) { const h = w.shift(); const iD = h.indexOf('date'), iK = h.indexOf('weight_kg');
+    const by = {}; w.forEach(r => { if (r[iD] && num(r[iK]) > 0) by[r[iD]] = num(r[iK]); });
+    weights = Object.keys(by).sort().map(k => ({ date: k, kg: by[k] })); store.set('weights', weights); }
+  store.set('garminPulled', Date.now());
+  if (state.tab === 'stats') viewStats();
+}
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function shortDay(s, long) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, long ? { weekday: 'short', month: 'short', day: 'numeric' } : { weekday: 'narrow' }); }
+function topRounded(x, y, w, h, r) { r = Math.min(r, w / 2, h); return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; }
+// Bar chart: one series of bars, optional tick marks (second measure, same unit), optional target line.
+function barChart({ id, days, bars, ticks, target, color, unit }) {
+  const W = 340, H = 170, L = 38, R = 6, T = 10, B = 22, pw = W - L - R, ph = H - T - B;
+  const vals = [...bars, ...(ticks || []), target || 0].filter(v => v != null);
+  const max = Math.max(10, ...vals) * 1.08;
+  const step = Math.pow(10, Math.floor(Math.log10(max / 3))); const nice = [1, 2, 2.5, 5, 10].map(k => k * step).find(k => max / k <= 4) || step * 10;
+  const y = v => T + ph - v / max * ph;
+  const slot = pw / days.length, bw = Math.max(3, Math.min(26, slot - 2));
+  let g = '';
+  for (let v = 0; v <= max; v += nice) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${v >= 1000 ? (v / 1000) + 'k' : v}</text>`;
+  if (target) g += `<line x1="${L}" x2="${W - R}" y1="${y(target)}" y2="${y(target)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  days.forEach((d, i) => {
+    const cx = L + slot * i + slot / 2, v = bars[i];
+    if (v) g += `<path d="${topRounded(cx - bw / 2, y(v), bw, y(0) - y(v), 4)}" fill="${color}" ${d === todayStr() ? 'fill-opacity=".55"' : ''}/>`;
+    const t = ticks && ticks[i];
+    if (t) g += `<line x1="${cx - bw / 2 - 2}" x2="${cx + bw / 2 + 2}" y1="${y(t)}" y2="${y(t)}" stroke="var(--ink)" stroke-width="2.5" stroke-linecap="round"/>`;
+    const lab = days.length <= 7 ? shortDay(d) : (i % 5 === 0 || i === days.length - 1) ? d.slice(8).replace(/^0/, '') : '';
+    if (lab) g += `<text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${lab}</text>`;
+    g += `<rect class="hit" data-i="${i}" x="${L + slot * i}" y="${T}" width="${slot}" height="${ph + B}" fill="transparent"/>`;
+  });
+  return `<svg id="${id}" viewBox="0 0 ${W} ${H}" width="100%" role="img" style="display:block;touch-action:manipulation">${g}<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-width="1"/></svg>
+    <div class="small muted" id="${id}-cap" style="min-height:20px;margin-top:4px">Tap a bar for details</div>`;
+}
+function lineChart({ pts, color, unit }) {
+  const W = 340, H = 150, L = 38, R = 10, T = 12, B = 22, pw = W - L - R, ph = H - T - B;
+  const vs = pts.map(p => p.v), lo = Math.min(...vs), hi = Math.max(...vs), pad = Math.max(0.5, (hi - lo) * 0.25);
+  const mn = lo - pad, mx = hi + pad;
+  const t0 = new Date(pts[0].date).getTime(), t1 = Math.max(t0 + 864e5, new Date(pts[pts.length - 1].date).getTime());
+  const x = d => L + (new Date(d).getTime() - t0) / (t1 - t0) * pw, y = v => T + ph - (v - mn) / (mx - mn) * ph;
+  let g = '';
+  [0.12, 0.5, 0.88].map(k => mn + (mx - mn) * k).forEach(v => g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${r1(v)}</text>`);
+  g += `<polyline points="${pts.map(p => `${x(p.date)},${y(p.v)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+  pts.forEach((p, i) => g += `<circle cx="${x(p.date)}" cy="${y(p.v)}" r="4" fill="${color}" stroke="var(--card)" stroke-width="2"/><rect class="hit" data-i="${i}" x="${x(p.date) - 14}" y="${T}" width="28" height="${ph}" fill="transparent"/>`);
+  [pts[0], pts[pts.length - 1]].forEach((p, k) => g += `<text x="${x(p.date)}" y="${H - 6}" text-anchor="${k ? 'end' : 'start'}" font-size="10" fill="var(--muted)">${shortDay(p.date, true)}</text>`);
+  return `<svg id="wchart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${g}</svg><div class="small muted" id="wchart-cap" style="min-height:20px;margin-top:4px">Tap a point for details</div>`;
+}
+function viewStats() {
+  const n = state.range || 7;
+  const days = Array.from({ length: n }, (_, i) => addDays(todayStr(), i - n + 1));
+  const all = [...entries, ...remote];
+  const per = days.map(d => totals(all.filter(e => e.date === d)));
+  const logged = per.map(t => t.kcal > 0);
+  const done = days.map((d, i) => logged[i] && d < todayStr());              // complete days with food logged
+  const burned = days.map(d => d < todayStr() && garmin[d] ? garmin[d].total : null); // today's Garmin total is partial
+  const avg = (arr, mask) => { const v = arr.filter((x, i) => mask[i] && x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const aIn = avg(per.map(t => t.kcal), done), aOut = avg(burned, done.map((d, i) => d && burned[i] != null));
+  const both = done.map((d, i) => d && burned[i] != null);
+  const aBal = avg(per.map((t, i) => burned[i] != null ? t.kcal - burned[i] : null), both);
+  const aP = avg(per.map(t => t.p), done);
+  const sumP = per.reduce((a, t, i) => a + (done[i] ? t.p : 0), 0), sumC = per.reduce((a, t, i) => a + (done[i] ? t.c : 0), 0), sumF = per.reduce((a, t, i) => a + (done[i] ? t.f : 0), 0);
+  const kP = sumP * 4, kC = sumC * 4, kF = sumF * 9, kT = kP + kC + kF;
+  let streak = 0; { const has = d => all.some(e => e.date === d); let i = has(todayStr()) ? 0 : 1; while (i < 500 && has(addDays(todayStr(), -i))) { streak++; i++; } }
+  const tile = (label, val, sub) => `<div class="macro"><span class="small muted">${label}</span><b>${val}</b>${sub ? `<span class="small muted">${sub}</span>` : ''}</div>`;
+  const doneN = done.filter(Boolean).length;
+  let html = `<div class="seg" id="rng"><button data-r="7">7 days</button><button data-r="30">30 days</button></div>
+    <div class="macros" style="grid-template-columns:repeat(2,1fr)">
+      ${tile('Avg eaten', aIn != null ? fmt(aIn) + ' kcal' : '–', `${doneN} full day${doneN === 1 ? '' : 's'} logged`)}
+      ${tile('Avg burned (Garmin)', aOut != null ? fmt(aOut) + ' kcal' : '–', settings.ghToken ? '' : 'needs sync token')}
+      ${tile('Avg balance', aBal != null ? (aBal > 0 ? '+' : '−') + fmt(Math.abs(aBal)) + ' kcal' : '–', aBal == null ? '' : aBal < 0 ? 'deficit / day' : 'surplus / day')}
+      ${tile('Avg protein', aP != null ? r0(aP) + ' g' : '–', `target ${settings.protein} g · streak ${streak} day${streak === 1 ? '' : 's'}`)}
+    </div>
+    <div class="card" style="margin-top:12px"><b>Calories</b>
+      <div class="row small muted" style="gap:14px;margin:6px 0 4px;flex-wrap:wrap">
+        <span class="row" style="gap:5px"><i style="width:10px;height:10px;border-radius:2px;background:var(--accent);display:inline-block"></i>Eaten</span>
+        <span class="row" style="gap:5px"><i style="width:12px;height:3px;border-radius:2px;background:var(--ink);display:inline-block"></i>Burned (Garmin)</span>
+        <span class="row" style="gap:5px"><i style="width:12px;border-top:2px dashed var(--muted);display:inline-block"></i>Target ${fmt(settings.kcal)}</span></div>
+      ${barChart({ id: 'kchart', days, bars: per.map(t => t.kcal), ticks: burned, target: settings.kcal, color: 'var(--accent)' })}</div>
+    <div class="card"><b>Protein</b> <span class="small muted">· dashed line = ${settings.protein} g target</span>
+      ${barChart({ id: 'pchart', days, bars: per.map(t => t.p), target: settings.protein, color: 'var(--p)' })}</div>`;
+  if (kT > 0) {
+    const seg = [['Protein', kP, 'var(--p)', sumP], ['Carbs', kC, 'var(--c)', sumC], ['Fat', kF, 'var(--f)', sumF]];
+    html += `<div class="card"><b>Where calories come from</b> <span class="small muted">· ${n}-day average</span>
+      <div style="display:flex;gap:2px;height:16px;margin:12px 0 10px">${seg.map(([, k, c]) => `<div style="flex:${k};background:${c};border-radius:4px"></div>`).join('')}</div>
+      <div class="macros" style="margin-top:0">${seg.map(([l, k, c, g]) => `<div class="macro"><span class="small muted"><i class="dot" style="background:${c}"></i>${l}</span><b>${r0(k / kT * 100)}%</b><span class="small muted">${r0(g / doneN)} g / day</span></div>`).join('')}</div></div>`;
+  }
+  const wr = weights.filter(w => w.date >= addDays(todayStr(), -Math.max(n, 30) + 1));
+  if (wr.length >= 2) {
+    const ch = wr[wr.length - 1].kg - wr[0].kg;
+    html += `<div class="card"><div class="spread"><b>Weight</b><span class="small muted">${ch > 0 ? '+' : ch < 0 ? '−' : '±'}${r1(Math.abs(ch))} kg since ${shortDay(wr[0].date, true)}</span></div>
+      ${lineChart({ pts: wr.map(w => ({ date: w.date, v: w.kg })), color: 'var(--accent)' })}</div>`;
+  } else if (wr.length === 1) html += `<div class="card"><b>Weight</b><div class="small muted" style="margin-top:4px">${r1(wr[0].kg)} kg on ${shortDay(wr[0].date, true)}. The chart appears after two weigh-ins.</div></div>`;
+  const top = {}; all.filter(e => days.includes(e.date)).forEach(e => { const k = e.name; top[k] = top[k] || { k: 0, n: 0 }; top[k].k += e.kcal; top[k].n++; });
+  const tl = Object.entries(top).sort((a, b) => b[1].k - a[1].k).slice(0, 5);
+  if (tl.length) html += `<h2>Biggest calorie sources · ${n} days</h2><div class="list">${tl.map(([name, v]) => `<div class="item"><div class="grow"><div class="name">${esc(name)}</div><div class="small muted">${v.n}× · ${kT ? r0(v.k / Math.max(1, per.reduce((a, t) => a + t.kcal, 0)) * 100) : 0}% of calories</div></div><div class="kcal">${fmt(v.k)}</div></div>`).join('')}</div>`;
+  html += `<div class="small muted" style="margin:14px 4px">Averages use full days you logged food (today is left out until it's over). Garmin calories update after the morning sync.</div>`;
+  $('#view').innerHTML = html;
+  $('#rng').querySelectorAll('button').forEach(b => { b.classList.toggle('on', +b.dataset.r === n); b.onclick = () => { state.range = +b.dataset.r; viewStats(); }; });
+  const wire = (id, fn) => { const svg = $('#' + id); if (!svg) return; svg.querySelectorAll('.hit').forEach(h => h.onclick = () => {
+    svg.querySelectorAll('.hit').forEach(x => x.setAttribute('fill', 'transparent')); h.setAttribute('fill', 'rgba(127,127,127,.12)'); $('#' + id + '-cap').innerHTML = fn(+h.dataset.i); }); };
+  wire('kchart', i => `<b style="color:var(--ink)">${shortDay(days[i], true)}</b> · eaten ${per[i].kcal ? fmt(per[i].kcal) : '–'}${burned[i] != null ? ` · burned ${fmt(burned[i])} · ${per[i].kcal ? (per[i].kcal - burned[i] > 0 ? '+' : '−') + fmt(Math.abs(per[i].kcal - burned[i])) : ''}` : days[i] === todayStr() ? ' · today, in progress' : ''}`);
+  wire('pchart', i => `<b style="color:var(--ink)">${shortDay(days[i], true)}</b> · ${per[i].p ? r0(per[i].p) + ' g protein' : 'nothing logged'}`);
+  wire('wchart', i => `<b style="color:var(--ink)">${shortDay(wr[i].date, true)}</b> · ${r1(wr[i].kg)} kg`);
+  pullGarmin(false);
 }
 
 // ---------- Saved meals ----------
@@ -751,7 +866,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v8 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v9 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
