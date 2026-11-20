@@ -175,9 +175,9 @@ async def main():
         check(await pg.locator('#connedit').count() == 1, 'More shows compact "Connected" card')
 
         print('Gestures')
-        await tab(pg, 'today'); await pg.evaluate(SWIPE_JS, ['#view', 150, 5]); await pg.wait_for_timeout(300)
+        await tab(pg, 'today'); await pg.evaluate(SWIPE_JS, ['#view', 150, 5]); await pg.wait_for_timeout(800)
         check(await pg.inner_text('#dlabel') == 'Yesterday', 'swipe right goes to yesterday')
-        await pg.evaluate(SWIPE_JS, ['#view', -150, 5]); await pg.wait_for_timeout(300)
+        await pg.evaluate(SWIPE_JS, ['#view', -150, 5]); await pg.wait_for_timeout(800)
         check(await pg.inner_text('#dlabel') == 'Today', 'swipe left comes back to today')
         await pg.click('#wlog'); await pg.evaluate(SWIPE_JS, ['.sheet h3', 0, 200]); await pg.wait_for_timeout(400)
         check(await pg.locator('#bd').count() == 0, 'swiping a panel down closes it')

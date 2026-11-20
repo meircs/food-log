@@ -113,7 +113,7 @@ function totals(list) {
 
 // ---------- sheet ----------
 function openSheet(html, mount) {
-  closeSheet();
+  closeSheet(false);
   const bd = document.createElement('div'); bd.className = 'backdrop'; bd.id = 'bd';
   bd.innerHTML = `<div class="sheet" role="dialog"><div class="grab"></div><button class="xbtn" id="xclose" aria-label="Close">✕</button>${html}</div>`;
   bd.addEventListener('click', e => { if (e.target === bd) closeSheet(); });
@@ -121,7 +121,27 @@ function openSheet(html, mount) {
   document.body.appendChild(bd);
   mount && mount(bd.firstElementChild);
 }
-function closeSheet() { stopScanner(); const b = $('#bd'); b && b.remove(); }
+function closeSheet(animated = true) {
+  stopScanner(); const b = $('#bd'); if (!b || b.dataset.closing) return;
+  const sh = b.firstElementChild;
+  if (!animated || !sh) { b.remove(); return; }
+  b.dataset.closing = '1'; b.id = 'bd-closing'; b.classList.add('closing'); b.style.pointerEvents = 'none';
+  sh.style.transition = 'transform .26s cubic-bezier(.4,0,.8,.6)'; sh.style.transform = 'translateY(100%)';
+  setTimeout(() => b.remove(), 260);
+}
+// iOS-like day change: content slides out, the new day slides in with an ease-out curve.
+let sliding = false;
+function slideDay(dir, fromX = 0) {
+  const v = $('#view'); if (sliding || !v) return; sliding = true;
+  const W = window.innerWidth;
+  v.style.transition = 'transform .18s cubic-bezier(.4,0,1,1), opacity .18s'; v.style.transform = `translateX(${-dir * W * 0.6}px)`; v.style.opacity = '0';
+  setTimeout(() => {
+    state.date = addDays(state.date, dir); render();
+    v.style.transition = 'none'; v.style.transform = `translateX(${dir * W * 0.35}px)`; v.style.opacity = '0'; void v.offsetWidth;
+    v.style.transition = 'transform .34s cubic-bezier(.2,.9,.25,1), opacity .25s ease-out'; v.style.transform = 'translateX(0)'; v.style.opacity = '1';
+    setTimeout(() => { v.style.transition = ''; v.style.transform = ''; v.style.opacity = ''; sliding = false; }, 360);
+  }, 170);
+}
 
 // ---------- chrome ----------
 function renderHeader() {
@@ -130,8 +150,8 @@ function renderHeader() {
     h.innerHTML = `<button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
       <h1 id="dlabel">${state.tab === 'add' ? 'Add to ' + (state.addMeal ? cap(state.addMeal) + ', ' : '') : ''}${esc(dateLabel(state.date))}</h1>
       <button class="iconbtn" id="next" aria-label="Next day">›</button>`;
-    $('#prev').onclick = () => { state.date = addDays(state.date, -1); render('in-left'); };
-    $('#next').onclick = () => { state.date = addDays(state.date, 1); render('in-right'); };
+    $('#prev').onclick = () => slideDay(-1);
+    $('#next').onclick = () => slideDay(1);
     $('#dlabel').onclick = () => { state.date = todayStr(); render(); };
   } else {
     h.innerHTML = `${state.tab === 'foods' ? '<button class="iconbtn" id="back" aria-label="Back">‹</button>' : ''}<h1>${{ foods: 'My foods & meals', stats: 'Stats', health: 'Health', more: 'More' }[state.tab]}</h1>${state.tab === 'foods' ? '<span style="width:40px"></span>' : ''}`;

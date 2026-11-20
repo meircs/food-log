@@ -46,7 +46,8 @@ scheduleSync();
       else if (dy > 0 && startScroll <= 0 && window.scrollY <= 0 && settings.ghToken) mode = 'pull';
       else mode = 'none';
     }
-    if (mode === 'sheet') sheet.style.transform = `translateY(${Math.max(0, dy)}px)`;
+    if (mode === 'sheet') { sheet.style.transition = 'none'; sheet.style.transform = `translateY(${Math.max(0, dy)}px)`; }
+    if (mode === 'day' && !sliding) { const v = $('#view'); v.style.transition = 'none'; v.style.transform = `translateX(${dx * 0.85}px)`; v.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / window.innerWidth)); }
     if (mode === 'pull') {
       ptr = ptr || Object.assign(document.body.appendChild(document.createElement('div')), { id: 'ptr' });
       const p = Math.min(dy, 90); ptr.style.transform = `translate(-50%, ${p - 60}px)`; ptr.textContent = dy > 70 ? '↻ Release to sync' : '↓ Pull to sync';
@@ -54,8 +55,10 @@ scheduleSync();
   }, { passive: true });
   document.addEventListener('touchend', e => {
     const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy, fast = Date.now() - st < 600;
-    if (mode === 'sheet' && sheet) { if (dy > 110 || (fast && dy > 50)) { sheet.style.transform = 'translateY(100%)'; setTimeout(closeSheet, 150); } else sheet.style.transform = ''; }
-    if (mode === 'day' && Math.abs(dx) > 60 && !$('#bd')) { state.date = addDays(state.date, dx < 0 ? 1 : -1); render(dx < 0 ? 'in-right' : 'in-left'); }
+    if (mode === 'sheet' && sheet) { sheet.style.transition = ''; if (dy > 110 || (fast && dy > 50)) closeSheet(); else sheet.style.transform = ''; }
+    if (mode === 'day' && !sliding) { const v = $('#view');
+      if ((Math.abs(dx) > window.innerWidth * 0.25 || (fast && Math.abs(dx) > 50)) && !$('#bd')) slideDay(dx < 0 ? 1 : -1);
+      else { v.style.transition = 'transform .3s cubic-bezier(.2,.9,.25,1), opacity .2s'; v.style.transform = 'translateX(0)'; v.style.opacity = '1'; setTimeout(() => { v.style.transition = ''; v.style.transform = ''; v.style.opacity = ''; }, 320); } }
     if (mode === 'pull' && ptr) {
       if (dy > 70) { ptr.textContent = '↻ Syncing…'; store.set('remotePulled', 0); store.set('garminPulled', 0);
         sync(true).finally(() => { if (ptr) { ptr.style.transform = 'translate(-50%,-60px)'; const p = ptr; ptr = null; setTimeout(() => p.remove(), 200); } render(); }); }

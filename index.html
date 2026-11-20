@@ -37,7 +37,9 @@ button:active,.item:active,.chip:active{opacity:.6;transition:opacity .05s}
 @keyframes fade{from{opacity:.4}to{opacity:1}}
 #ptr{position:fixed;left:50%;top:calc(var(--safe-t) + 8px);z-index:7;transform:translate(-50%,-60px);background:var(--card);border:1px solid var(--line);
   border-radius:20px;padding:6px 14px;font-size:13px;color:var(--muted);box-shadow:0 2px 8px rgba(0,0,0,.12);transition:transform .15s}
-.sheet{transition:transform .2s ease-out}
+.sheet{transition:transform .32s cubic-bezier(.2,.9,.25,1);will-change:transform}
+.backdrop{transition:background .25s ease}.backdrop.closing{background:rgba(0,0,0,0)}
+#view{will-change:transform}
 html,body{margin:0;background:var(--bg);color:var(--ink);
   font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
 body{padding-top:var(--safe-t);padding-bottom:calc(68px + var(--safe-b))}
@@ -101,11 +103,13 @@ nav.tabs button.on{color:var(--accent);font-weight:600}
 nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px)}
 .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--bg);width:100%;max-width:620px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;
-  padding:8px 16px calc(18px + var(--safe-b));animation:up .18s ease-out}
+  padding:8px 16px calc(18px + var(--safe-b));animation:up .34s cubic-bezier(.2,.9,.25,1)}
 .xbtn{position:sticky;top:0;float:right;margin:-2px -4px 0 8px;z-index:2;width:34px;height:34px;border-radius:50%;border:0;background:var(--line);color:var(--ink);font-size:16px;line-height:34px;padding:0}
 .sheet .grab{width:38px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 10px}
 .sheet h3{margin:0 0 4px;font-size:19px}
-@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+@keyframes bdin{from{background:rgba(0,0,0,0)}to{background:rgba(0,0,0,.35)}}
+.backdrop{animation:bdin .25s ease}
 .toast{position:fixed;left:50%;bottom:calc(84px + var(--safe-b));transform:translateX(-50%);z-index:30;
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;max-width:90vw}
 .linkbtn{border:0;background:none;color:var(--accent);font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;padding:2px 0}
