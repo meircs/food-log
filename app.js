@@ -48,10 +48,14 @@ const MEALS = ['breakfast', 'lunch', 'dinner', 'snack', 'drink'];
 let foods = store.get('foods', null);
 if (!foods) { foods = SEED.map(f => ({ ...f, id: uid(), uses: 0, lastUsed: 0 })); store.set('foods', foods); }
 let entries = store.get('entries', []);
-let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-health', ghPath: 'data/food.csv', ghLibPath: 'data/food_library.json', ghToken: '' }, store.get('settings', {}));
+let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-health', ghPath: 'data/food.csv', ghLibPath: 'data/food_library.json', ghSuppPath: 'data/supplements.csv', ghToken: '' }, store.get('settings', {}));
 const state = { tab: 'today', date: todayStr(), q: '', fq: '' };
 
 let meals = store.get('meals', []);
+let supps = store.get('supps', []);       // [{id, name, dose}]
+let suppLog = store.get('suppLog', []);   // [{id, date, time, suppId, name, dose, exported}]
+const saveSupps = () => { store.set('supps', supps); bumpLib(); scheduleSync(); };
+const saveSuppLog = () => { store.set('suppLog', suppLog); scheduleSync(); };
 let remote = store.get('remote', []); // rows Claude logged in food.csv (read-only here)
 // changed=true marks the library for backup; usage stats alone don't trigger a backup commit.
 const saveFoods = (changed = true) => { store.set('foods', foods); if (changed) { bumpLib(); scheduleSync(); } };
@@ -158,7 +162,8 @@ function viewToday() {
       <div class="macro"><span class="small muted"><i class="dot" style="background:var(--c)"></i>Carbs</span><b>${r0(t.c)} g</b></div>
       <div class="macro"><span class="small muted"><i class="dot" style="background:var(--f)"></i>Fat</span><b>${r0(t.f)} g</b></div>
     </div></div>
-    <div class="small muted" id="syncline" style="margin:-4px 4px 8px">${esc(syncStatus())}</div>`;
+    <div class="small muted" id="syncline" style="margin:-4px 4px 8px">${esc(syncStatus())}</div>
+    ${suppCard()}`;
   if (!day.length) html += `<div class="list"><div class="empty">Nothing logged yet.<br><button class="btn" id="goadd" style="max-width:220px;margin:12px auto 0">Add food</button></div></div>`;
   for (const m of MEALS) {
     const items = day.filter(e => e.meal === m); if (!items.length) continue;
@@ -169,6 +174,8 @@ function viewToday() {
   if (day.length) html += `<button class="btn secondary" id="goadd" style="margin-top:16px">＋ Add food</button>`;
   $('#view').innerHTML = html;
   const g = $('#goadd'); if (g) g.onclick = () => { state.tab = 'add'; render(); };
+  $('#view').querySelectorAll('[data-supp]').forEach(b => b.onclick = () => toggleSupp(b.dataset.supp));
+  const se = $('#suppedit'); if (se) se.onclick = editSupps;
   $('#view').querySelectorAll('.item').forEach(b => b.onclick = () => { const e = day.find(x => x.id === b.dataset.id); e.remote ? showRemote(e) : editEntry(e); });
   $('#view').querySelectorAll('[data-save]').forEach(b => b.onclick = () => saveAsMeal(day.filter(e => e.meal === b.dataset.save), b.dataset.save));
 }
@@ -351,6 +358,63 @@ function quickAdd() {
   });
 }
 
+// ---------- Supplements ----------
+function suppCard() {
+  if (!supps.length) return `<button class="linkbtn" id="suppedit" style="margin:0 4px 8px;font-size:14px">＋ Track daily vitamins / supplements</button>`;
+  const taken = new Set(suppLog.filter(l => l.date === state.date).map(l => l.suppId));
+  const n = supps.filter(x => taken.has(x.id)).length;
+  return `<div class="card" style="padding:12px 14px"><div class="spread"><b>Supplements <span class="small muted" style="font-weight:400">${n}/${supps.length}</span></b><button class="linkbtn" id="suppedit">Edit</button></div>
+    <div class="chips">${supps.map(x => `<button class="chip ${taken.has(x.id) ? 'on' : ''}" data-supp="${x.id}">${taken.has(x.id) ? '✓' : '○'} ${esc(x.name)}${x.dose ? ` <span class="muted">${esc(x.dose)}</span>` : ''}</button>`).join('')}</div></div>`;
+}
+function toggleSupp(id) {
+  const x = supps.find(s => s.id === id); if (!x) return;
+  const ex = suppLog.find(l => l.date === state.date && l.suppId === id);
+  if (ex) { if (ex.exported) { const d = store.get('suppDeleted', []); d.push(ex.id); store.set('suppDeleted', d); } suppLog = suppLog.filter(l => l !== ex); }
+  else suppLog.push({ id: uid(), date: state.date, time: state.date === todayStr() ? nowTime() : '09:00', suppId: id, name: x.name, dose: x.dose || '', exported: false });
+  saveSuppLog(); render();
+}
+function editSupps() {
+  const draw = s => {
+    $('#sl', s).innerHTML = supps.length ? supps.map(x => `<div class="item"><div class="grow"><div class="name">${esc(x.name)}</div><div class="small muted">${esc(x.dose || '')}</div></div>
+      <button class="linkbtn" data-del="${x.id}" style="color:var(--warn);font-size:14px">Remove</button></div>`).join('') : '<div class="empty">No supplements yet</div>';
+    s.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { supps = supps.filter(x => x.id !== b.dataset.del); saveSupps(); draw(s); });
+  };
+  openSheet(`<h3>Daily supplements</h3><div class="muted small">Tick them off on the Today screen. Past days keep their history if you remove one.</div>
+    <div class="list" id="sl" style="margin-top:12px"></div>
+    <div class="grid2"><div><label>Name</label><input type="text" id="sn" placeholder="e.g. Vitamin D"></div>
+    <div><label>Dose (optional)</label><input type="text" id="sd" placeholder="e.g. 1000 IU"></div></div>
+    <button class="btn secondary" id="sa">＋ Add</button><button class="btn" id="sdone">Done</button>`, s => {
+    draw(s);
+    $('#sa', s).onclick = () => { const name = $('#sn', s).value.trim(); if (!name) return toast('Enter a name');
+      supps.push({ id: uid(), name, dose: $('#sd', s).value.trim() }); saveSupps(); $('#sn', s).value = ''; $('#sd', s).value = ''; draw(s); };
+    $('#sdone', s).onclick = () => { closeSheet(); render(); };
+  });
+}
+async function syncSupps() {
+  const pending = suppLog.filter(l => !l.exported), deleted = store.get('suppDeleted', []);
+  if (!pending.length && !deleted.length) return;
+  const ids = new Set([...pending.map(l => l.id), ...deleted]);
+  const HEADER = 'date,time,name,dose,source,notes';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const g = await gh('GET', null, settings.ghSuppPath);
+    let text = HEADER + '\n', sha;
+    if (g.ok) { const f = await g.json(); text = b64ToText(f.content || ''); sha = f.sha; }
+    else if (g.status !== 404) throw new Error('supplements: GitHub error ' + g.status);
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.length);
+    const header = lines.shift() || HEADER;
+    const kept = lines.filter(l => { const m = l.match(/app:([a-z0-9]+)/); return !(m && ids.has(m[1])); });
+    const added = pending.map(l => [l.date, l.time, l.name, l.dose, 'app', 'app:' + l.id].map(csvCell).join(','));
+    const out = [header, ...kept, ...added].sort((a, b) => a === header ? -1 : b === header ? 1 : a.localeCompare(b)).join('\n') + '\n';
+    const p = await gh('PUT', { message: `Supplements: ${added.length} logged${deleted.length ? `, ${deleted.length} removed` : ''}`, content: textToB64(out), ...(sha ? { sha } : {}) }, settings.ghSuppPath);
+    if (p.status === 409 || p.status === 422) continue;
+    if (!p.ok) throw new Error('supplements: GitHub error ' + p.status);
+    const sent = new Set(pending.map(l => l.id));
+    suppLog.forEach(l => { if (sent.has(l.id)) l.exported = true; }); store.set('suppLog', suppLog);
+    store.set('suppDeleted', store.get('suppDeleted', []).filter(id => !ids.has(id)));
+    return;
+  }
+}
+
 // ---------- Stats ----------
 let garmin = store.get('garmin', {});   // date -> {total, active}
 let weights = store.get('weights', []); // [{date, kg}]
@@ -445,6 +509,13 @@ function viewStats() {
     html += `<div class="card"><b>Where calories come from</b> <span class="small muted">· ${n}-day average</span>
       <div style="display:flex;gap:2px;height:16px;margin:12px 0 10px">${seg.map(([, k, c]) => `<div style="flex:${k};background:${c};border-radius:4px"></div>`).join('')}</div>
       <div class="macros" style="margin-top:0">${seg.map(([l, k, c, g]) => `<div class="macro"><span class="small muted"><i class="dot" style="background:${c}"></i>${l}</span><b>${r0(k / kT * 100)}%</b><span class="small muted">${r0(g / doneN)} g / day</span></div>`).join('')}</div></div>`;
+  }
+  if (supps.length) {
+    html += `<div class="card"><b>Supplements</b> <span class="small muted">· days taken, last ${n} days</span>` + supps.map(x => {
+      const k = days.filter(d => suppLog.some(l => l.date === d && l.suppId === x.id)).length;
+      return `<div style="margin-top:10px"><div class="spread small"><span>${esc(x.name)}</span><span class="muted">${k}/${n} days · ${r0(k / n * 100)}%</span></div>
+        <div class="bar" style="margin:4px 0 0"><i style="width:${k / n * 100}%;background:var(--p)"></i></div></div>`;
+    }).join('') + `</div>`;
   }
   const wr = weights.filter(w => w.date >= addDays(todayStr(), -Math.max(n, 30) + 1));
   if (wr.length >= 2) {
@@ -680,10 +751,12 @@ async function handleBarcode(code) {
 async function sync(manual) {
   if (!settings.ghToken) { if (manual) toast('Add your GitHub token first'); return; }
   if (syncing) return;
-  const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty();
+  const suppWork = suppLog.some(l => !l.exported) || store.get('suppDeleted', []).length;
+  const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty() || suppWork;
   await syncEntries(manual);
   if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullRemote(); } catch (e) { store.set('syncError', 'could not reach GitHub: ' + e.message); } }
   { const l = $('#syncline'); if (l) l.textContent = syncStatus(); if (state.tab === 'more') render(); }
+  if (suppWork && navigator.onLine) { syncing = true; try { await syncSupps(); } catch (e) { store.set('syncError', e.message); } finally { syncing = false; } }
   if (!work) { if (manual) toast(store.get('syncError', '') ? 'Sync problem: ' + store.get('syncError', '') : 'Up to date ✓'); return; }
   if (!navigator.onLine || !libDirty()) return;
   syncing = true;
@@ -740,7 +813,7 @@ async function pullRemote() {
 
 async function syncLibrary() {
   const rev = store.get('libRev', 0);
-  const body = JSON.stringify({ app: 'food-log', v: 2, updated: new Date().toISOString(), foods, meals }, null, 1) + '\n';
+  const body = JSON.stringify({ app: 'food-log', v: 2, updated: new Date().toISOString(), foods, meals, supps }, null, 1) + '\n';
   for (let attempt = 0; attempt < 3; attempt++) {
     const g = await gh('GET', null, settings.ghLibPath);
     if (g.status === 401 || g.status === 403) throw new Error('token rejected');
@@ -759,7 +832,7 @@ async function loadLibraryFromRepo(ask) {
   const d = JSON.parse(b64ToText((await g.json()).content || ''));
   if (!Array.isArray(d.foods)) { if (ask) toast('Library file looks wrong'); return false; }
   if (ask && !confirm(`Replace this phone's library with the repo backup (${d.foods.length} foods, ${(d.meals || []).length} meals)?`)) return false;
-  foods = d.foods; meals = d.meals || [];
+  foods = d.foods; meals = d.meals || []; if (Array.isArray(d.supps) && !supps.length) { supps = d.supps; store.set('supps', supps); }
   store.set('foods', foods); store.set('meals', meals);
   store.set('libRev', 0); store.set('libSynced', 0); store.set('libEdited', false);
   render(); toast(`Library loaded: ${foods.length} foods, ${meals.length} meals`); return true;
@@ -866,7 +939,7 @@ function viewMore() {
       <button class="btn secondary" id="exa">Share all entries (CSV)</button>
       <button class="btn secondary" id="unx">Mark all entries as not exported</button>
     </div>
-    <div class="small muted" style="text-align:center;margin-top:8px">Food log v9 · works offline</div>`;
+    <div class="small muted" style="text-align:center;margin-top:8px">Food log v10 · works offline</div>`;
   const markDone = () => { pending.forEach(e => e.exported = true); saveEntries(); store.set('lastExport', Date.now()); render(); };
   $('#exn').onclick = async () => {
     const ok = await shareFile(toCSV(pending), `food-${todayStr()}-${nowTime().replace(':', '')}.csv`, 'text/csv');
