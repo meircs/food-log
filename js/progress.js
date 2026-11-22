@@ -320,3 +320,84 @@ function sleepFactorsHTML() {
     ${wait.length ? `<div class="small muted" style="margin-top:8px">Needs more days: ${wait.map(f => `${f.ic} ${esc(f.label.toLowerCase())} (${f.yes.length}/3)`).join(' · ')}</div>` : ''}
     <div class="small muted" style="margin-top:8px">Average sleep score on nights after days with vs without each thing. Food items count only days you logged food. Patterns, not proof of cause.</div></div>`;
 }
+
+// ---------- 8. Fitness radar ----------
+// Six abilities, each 0–100 against common fitness standards (100 = excellent for an adult man).
+// Consistency and recovery are habits/states, so they sit beside the chart as badges, not spokes.
+function fitnessScores(asOf) {
+  const end = asOf || todayStr(), from = d => addDays(end, -d);
+  const inWin = (date, days) => date <= end && date > from(days);
+  const sess = {}; sets.filter(s => inWin(s.date, 60)).forEach(s => {
+    const k = exName(s.ex, s.sub).toLowerCase(), key = s.aid + s.date;
+    (sess[k] = sess[k] || {})[key] = sess[k][key] || { date: s.date, reps: 0, sets: 0, kg: 0, dur: 0 };
+    const x = sess[k][key]; x.reps += s.reps || 0; x.sets += s.sets || 0; x.kg = Math.max(x.kg, s.kg || 0); x.dur += s.dur || 0;
+  });
+  const best = (re, f) => { let b = null; Object.entries(sess).forEach(([k, m]) => { if (!re.test(k)) return; Object.values(m).forEach(x => { const v = f(x); if (v != null && (!b || v > b.v)) b = { v, x, k }; }); }); return b; };
+  const perSet = x => x.sets ? x.reps / x.sets : null;
+  const clamp = v => Math.max(0, Math.min(100, Math.round(v)));
+  const out = [];
+  const push = best(/push ?up|bench|dip/, perSet);
+  out.push({ k: 'Push', s: push ? clamp(push.v / 40 * 100) : null, why: push ? `${r0(push.v)} reps per set (${cap(push.k)}, ${dShort(push.x.date)}) · 40 = excellent` : 'No push-ups or presses in 60 days' });
+  const pull = best(/row|pull|chin|curl/, x => x.sets ? x.reps / x.sets * (1 + (x.kg || 0) / 20) : null);
+  out.push({ k: 'Pull', s: pull ? clamp(pull.v / 25 * 100) : null, why: pull ? `${r0(pull.x.reps / pull.x.sets)} reps per set${pull.x.kg ? ` with ${r1(pull.x.kg)} kg` : ''} (${cap(pull.k)}) · 25 = excellent` : 'No rows or pull-ups in 60 days' });
+  const legs = best(/squat|lunge|deadlift|bridge|step up/, x => x.sets ? x.reps / x.sets * (1 + (x.kg || 0) / 30) : null);
+  out.push({ k: 'Legs', s: legs ? clamp(legs.v / 40 * 100) : null, why: legs ? `${r0(legs.x.reps / legs.x.sets)} reps per set (${cap(legs.k)}) · 40 = excellent` : 'No squats or lunges in 60 days' });
+  const core = best(/plank|crunch|sit up|hollow|dead bug/, x => x.sets ? (x.reps ? x.reps / x.sets * 3 : x.dur / x.sets) : null);
+  out.push({ k: 'Core', s: core ? clamp(core.v / 180 * 100) : null, why: core ? (core.x.reps ? `${r0(core.x.reps / core.x.sets)} reps per set (${cap(core.k)})` : `${r0(core.x.dur / core.x.sets)} s plank per set`) + ' · 3 min = excellent' : 'No planks or core work in 60 days' });
+  const runs = acts.filter(a => /running/.test(a.type || '') && inWin(a.date, 90));
+  const fk = runs.filter(a => a.f1k).sort((a, b) => a.f1k - b.f1k)[0];
+  out.push({ k: 'Speed', s: fk ? clamp((600 - fk.f1k) / (600 - 240) * 100) : null, why: fk ? `Best km ${wkDur(fk.f1k)} (${dShort(fk.date)}) · 4:00 = excellent, 10:00 = 0` : 'No timed runs in 90 days' });
+  const longRun = acts.filter(a => /running/.test(a.type || '') && inWin(a.date, 60)).reduce((m, a) => Math.max(m, a.km || 0), 0);
+  const wks = [0, 1, 2, 3].map(w => { let t = 0; for (let i = 0; i < 7; i++) { const h = health[addDays(end, -(w * 7 + i))]; if (h) t += (h.imMod || 0) + 2 * (h.imVig || 0); } return t; });
+  const im = mean(wks), endS = Math.max(longRun / 10, im / 300) * 100;
+  out.push({ k: 'Endurance', s: longRun || im ? clamp(endS) : null, why: `Longest run ${r1(longRun)} km (10 km = excellent) · ${r0(im)} intensity min/week (300 = excellent)` });
+  return out;
+}
+function fitnessBadges() {
+  const t = todayStr(), wk = [0, 1, 2, 3].map(w => acts.filter(a => a.type !== 'walking' && a.date <= addDays(t, -7 * w) && a.date > addDays(t, -7 * (w + 1))).length);
+  const cons = Math.round(mean(wk.map(n => Math.min(3, n) / 3)) * 100);
+  const days = Object.keys(health).sort(), last = days.filter(d => health[d].hrv != null).pop(), L = last ? health[last] : {};
+  const rhr30 = mean(days.slice(-31, -1).map(d => health[d].rhr).filter(Boolean)) || null;
+  let rec = 'No data', rc = 'var(--muted)';
+  if (L.hrv != null) {
+    const lowHrv = L.hrvLo && L.hrv < L.hrvLo, highRhr = rhr30 && L.rhr && L.rhr - rhr30 >= 4;
+    if (lowHrv && highRhr) { rec = 'Low'; rc = 'var(--warn)'; } else if (lowHrv || highRhr || L.hrvStatus === 'UNBALANCED') { rec = 'Fair'; rc = '#d9a21b'; } else { rec = 'Good'; rc = 'var(--accent)'; }
+  }
+  return { cons, consTxt: `${wk[0]} workout${wk[0] === 1 ? '' : 's'} in the last 7 days · goal 3/week, averaged over 4 weeks`, rec, rc, recTxt: L.hrv != null ? `HRV ${L.hrv} ms${L.hrvLo ? ` (normal ${L.hrvLo}–${L.hrvHi})` : ''} · resting HR ${L.rhr ?? '–'}${rhr30 ? ` (usual ${r0(rhr30)})` : ''}` : '' };
+}
+function radarHTML() {
+  const now = fitnessScores(), then = fitnessScores(addDays(todayStr(), -30));
+  if (now.filter(x => x.s != null).length < 2) return '';
+  const showThen = then.filter(x => x.s != null).length >= 3;
+  const N = now.length, C = 150, R = 100, ang = i => -Math.PI / 2 + i * 2 * Math.PI / N;
+  const pt = (i, v) => [C + Math.cos(ang(i)) * R * v / 100, C + Math.sin(ang(i)) * R * v / 100];
+  const poly = sc => sc.map((x, i) => pt(i, x.s || 0).map(n => n.toFixed(1)).join(',')).join(' ');
+  let g = [25, 50, 75, 100].map(l => `<polygon points="${now.map((_, i) => pt(i, l).join(',')).join(' ')}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join('');
+  g += now.map((_, i) => `<line x1="${C}" y1="${C}" x2="${pt(i, 100)[0]}" y2="${pt(i, 100)[1]}" stroke="var(--line)"/>`).join('');
+  if (showThen) g += `<polygon points="${poly(then)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  g += `<polygon points="${poly(now)}" fill="var(--accent)" fill-opacity=".2" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round"/>`;
+  g += now.map((x, i) => { const [px, py] = pt(i, x.s || 0); return x.s != null ? `<circle cx="${px}" cy="${py}" r="4" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>` : ''; }).join('');
+  g += now.map((x, i) => { const [lx, ly] = pt(i, 128), anchor = Math.abs(lx - C) < 8 ? 'middle' : lx > C ? 'start' : 'end';
+    return `<g class="rlab" data-ri="${i}" style="cursor:pointer"><rect x="${lx - 40}" y="${ly - 16}" width="80" height="32" fill="transparent"/>
+      <text x="${lx}" y="${ly - 2}" text-anchor="${anchor}" font-size="12" fill="var(--muted)">${x.k}</text>
+      <text x="${lx}" y="${ly + 13}" text-anchor="${anchor}" font-size="14" font-weight="700" fill="var(--ink)">${x.s ?? '–'}</text></g>`; }).join('');
+  const b = fitnessBadges(), avg = r0(mean(now.filter(x => x.s != null).map(x => x.s)));
+  window._radar = now;
+  return `<div class="card"><div class="spread"><b>Fitness profile</b><span class="small muted">overall ${avg}/100</span></div>
+    <svg viewBox="-20 0 340 300" style="width:100%;display:block;margin-top:4px">${g}</svg>
+    ${showThen ? '<div class="small muted" style="text-align:center;margin-top:-4px"><span class="wkdot" style="background:var(--accent)"></span>Now <span style="display:inline-block;width:14px;border-top:2px dashed var(--muted);vertical-align:3px;margin:0 4px 0 10px"></span>30 days ago</div>' : ''}
+    <div class="small muted" id="rcap" style="margin:8px 0 2px;min-height:18px;text-align:center">Tap a label to see what the score is based on</div>
+    <div class="rbadges">
+      <div class="rbadge"><div class="small muted">Consistency</div><b>${b.cons}%</b><div class="small muted">${esc(b.consTxt)}</div></div>
+      <div class="rbadge"><div class="small muted">Recovery today</div><b style="color:${b.rc}">${b.rec}</b><div class="small muted">${esc(b.recTxt)}</div></div>
+    </div>
+    <div class="small muted" style="margin-top:8px">Scores compare your best recent effort with common fitness standards (100 = excellent). Strength uses the last 60 days of watch-detected exercises.</div></div>`;
+}
+function wireRadar() {
+  document.querySelectorAll('.rlab').forEach(el => el.onclick = () => {
+    const x = (window._radar || [])[+el.dataset.ri]; if (!x) return;
+    document.querySelectorAll('.rlab text:last-child').forEach(t => t.setAttribute('fill', 'var(--ink)'));
+    el.querySelector('text:last-child').setAttribute('fill', 'var(--accent)');
+    $('#rcap').innerHTML = `<b style="color:var(--ink)">${x.k} ${x.s ?? '–'}</b> · ${esc(x.why)}`;
+  });
+}

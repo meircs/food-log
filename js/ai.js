@@ -5,6 +5,31 @@
 let aiHistory = store.get('aiHistory', []); // newest first: {at, model, cost, data:{headline, summary, next[], food_idea, watch}}
 const AI_MODELS = { 'claude-sonnet-5-5': ['Sonnet 5.5 (recommended)', 2, 10], 'claude-haiku-5-5': ['Haiku 5.5 (cheapest)', 0.1, 0.5], 'claude-opus-5-5': ['Opus 5.5 (deepest)', 4, 20] };
 let aiBusy = false;
+// Credit left: Anthropic has no API for the balance, so you type the balance shown in the Console
+// and the app subtracts what each Update costs from then on (Updates from this phone only).
+function aiCredit() {
+  if (settings.aiBal == null || !settings.aiBalAt) return null;
+  const spent = store.get('aiSpend', []).filter(x => x.at > settings.aiBalAt).reduce((a, x) => a + (x.cost || 0), 0);
+  return { left: Math.max(0, settings.aiBal - spent), spent, start: settings.aiBal, at: settings.aiBalAt };
+}
+function aiCreditHTML() {
+  const c = aiCredit();
+  if (!c) return `<div class="small muted" style="text-align:center;margin:-4px 0 10px"><button class="linkbtn small" id="aibal">Set your credit balance to see how much is left</button></div>`;
+  const pct = c.start ? c.left / c.start * 100 : 0, per = aiHistory.filter(h => h.cost).slice(0, 10), avg = per.length ? per.reduce((a, h) => a + h.cost, 0) / per.length : 0;
+  return `<div class="card" style="padding:10px 14px;margin-top:0"><div class="spread"><span class="small muted">API credit left (estimate)</span><button class="linkbtn small" id="aibal">Update</button></div>
+    <div class="spread" style="align-items:baseline"><b style="font-size:20px;color:${c.left < 1 ? 'var(--warn)' : 'var(--ink)'}">$${c.left.toFixed(2)}</b><span class="small muted">of $${c.start.toFixed(2)}${avg ? ` · ≈ ${Math.floor(c.left / avg)} more updates` : ''}</span></div>
+    <div class="bar" style="margin:6px 0 2px"><i style="width:${pct}%;background:${c.left < 1 ? 'var(--warn)' : 'var(--accent)'}"></i></div>
+    <div class="small muted">Spent $${c.spent.toFixed(2)} here since ${new Date(c.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}. Check the exact balance at platform.claude.com → Billing.</div></div>`;
+}
+function editAiCredit() {
+  openSheet(`<h3>API credit balance</h3><div class="small muted">Open platform.claude.com → Settings → Billing and type the credit balance shown there. The app then counts down as you use Update.</div>
+    <label>Balance (USD)</label><input id="abal" type="text" inputmode="decimal" placeholder="e.g. 4.85" value="${settings.aiBal != null ? r1(aiCredit() ? aiCredit().left : settings.aiBal) : ''}">
+    <button class="btn" id="absv" style="margin-top:14px">Save</button>`, sh => {
+    sh.querySelector('#absv').onclick = () => { const v = num(sh.querySelector('#abal').value);
+      if (!(v >= 0)) return toast('Enter the balance in dollars');
+      settings.aiBal = v; settings.aiBalAt = new Date().toISOString(); saveSettings(); closeSheet(); render(); toast('Balance saved'); };
+  });
+}
 
 function aiContext() {
   const all = [...entries, ...remote];
@@ -69,6 +94,7 @@ async function aiUpdate() {
     const p = AI_MODELS[model] || AI_MODELS['claude-sonnet-5-5'], u = j.usage || {};
     const cost = ((u.input_tokens || 0) * p[1] + (u.output_tokens || 0) * p[2]) / 1e6;
     aiHistory.unshift({ at: new Date().toISOString(), model, cost, data }); aiHistory = aiHistory.slice(0, 30);
+    store.set('aiSpend', [...store.get('aiSpend', []), { at: new Date().toISOString(), cost }].slice(-2000));
     store.set('aiHistory', aiHistory); store.set('aiDirty', true); scheduleSync();
     toast('Updated');
   } catch (e) { toast(e.message === 'Failed to fetch' ? 'Could not reach Claude. Check your connection.' : e.message); }
@@ -139,10 +165,12 @@ function viewAI() {
   const spent = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).reduce((a, h) => a + (h.cost || 0), 0);
   $('#view').innerHTML = `<button class="btn" id="aiup" ${aiBusy ? 'disabled' : ''}>${aiBusy ? '✦ Analyzing your data…' : '✦ Update'}</button>
     <div class="small muted" style="text-align:center;margin:6px 0 10px">${latest ? (() => { const n = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).length; return `Last 30 days: ${n} update${n === 1 ? '' : 's'} · about $${spent.toFixed(2)}`; })() : 'Looks at your last 14 days, your goal and what you have eaten today.'}</div>
+    ${aiCreditHTML()}
     ${latest ? safeCard(latest, true) : '<div class="empty">No analysis yet. Tap Update.</div>'}
     ${older.length ? `<h2>Earlier</h2>${older.slice(0, 10).map(h => safeCard(h, false)).join('')}` : ''}
     <div class="small muted" style="margin:12px 4px">Sends a summary of your numbers (not photos) to Claude through your API key. Estimates, not medical advice.</div>`;
   $('#aiup').onclick = aiUpdate;
+  const ab = $('#aibal'); if (ab) ab.onclick = editAiCredit;
 }
 
 async function syncAI() {

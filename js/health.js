@@ -121,7 +121,7 @@ function viewHealth() {
     const [y, m, d] = mon.split('-').map(Number); const lab = new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return { label: lab, tip: `Week of ${lab} (Mon–Sun)${i === nW - 1 ? ', so far' : ''}`, days: ds }; });
   const imM = weeks.map(b => bSum(b, h => h.imMod)), imV = weeks.map(b => bSum(b, h => (h.imVig || 0) * 2));
-  let tr = rangeSeg + `<div class="macros" style="grid-template-columns:repeat(2,1fr)">${tile('Workouts', wk.length, `${fmt(wk.reduce((a, x) => a + x.dur, 0))} min total`)}${tile('Training load', fmt(wk.reduce((a, x) => a + (x.load || 0), 0)), 'sum for the period')}</div>` + prsHTML() + strengthHTML();
+  let tr = rangeSeg + `<div class="macros" style="grid-template-columns:repeat(2,1fr)">${tile('Workouts', wk.length, `${fmt(wk.reduce((a, x) => a + x.dur, 0))} min total`)}${tile('Training load', fmt(wk.reduce((a, x) => a + (x.load || 0), 0)), 'sum for the period')}</div>` + radarHTML() + prsHTML() + strengthHTML();
   const prs = prIds();
   tr += `<div class="card"><b>Intensity minutes</b> <span class="small muted">· per week, vigorous counts double</span>${leg([['Moderate', 'var(--sa)'], ['Vigorous ×2', 'var(--sd)'], ['150 min goal', 'var(--muted)', 'dash']])}
     ${hBars({ id: 'him', buckets: weeks, series: [{ name: 'Vigorous', color: 'var(--sd)', vals: imV }, { name: 'Moderate', color: 'var(--sa)', vals: imM }], target: 150 })}</div>`;
@@ -141,7 +141,7 @@ function viewHealth() {
     const ok = await syncGarminNow(t => { const x = $('#gsync'); if (x) x.textContent = '↻ ' + t; });
     if (ok) toast('Garmin data updated ✓'); if (state.tab === 'health') viewHealth(); };
   $('#hsec').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.s === sec); b.onclick = () => { state.hsec = b.dataset.s; viewHealth(); window.scrollTo(0, 0); }; });
-  wireTCharts(); wireBody(); wireBP();
+  wireTCharts(); wireBody(); wireBP(); wireRadar();
   if ($('#hr')) $('#hr').querySelectorAll('button').forEach(b => { b.classList.toggle('on', +b.dataset.r === r); b.onclick = () => { state.hrange = +b.dataset.r; viewHealth(); }; });
   const wire = (id, bks, fn) => { const svg = $('#' + id); if (!svg) return; svg.querySelectorAll('.hit').forEach(hh => hh.onclick = () => {
     svg.querySelectorAll('.hit').forEach(x => x.setAttribute('fill', 'transparent')); hh.setAttribute('fill', 'rgba(127,127,127,.12)');

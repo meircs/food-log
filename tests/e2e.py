@@ -244,6 +244,9 @@ async def main():
         check(getattr(repo, 'dispatches', 0) >= 1, 'Sync button starts the Garmin workflow')
         await pg.click('#hsec button[data-s="training"]'); await pg.wait_for_timeout(500)
         check(await pg.locator('.prgrid .pr').count() >= 4, 'personal records shown')
+        check(await pg.locator('.rlab').count() == 6, 'fitness radar with 6 spokes')
+        await pg.click('.rlab[data-ri="0"]'); await pg.wait_for_timeout(150)
+        check('Push' in await pg.locator('#rcap').inner_text() and 'excellent' in await pg.locator('#rcap').inner_text(), 'radar spoke explains its score')
         check(await pg.locator('.card:has-text("Strength progress"):has-text("Push up")').count() == 1, 'strength progress shown')
         check(await pg.locator('[data-act]').count() > 0, 'workouts listed under Training')
         if await pg.locator('[data-act]').count():
@@ -318,6 +321,8 @@ async def main():
         await pg.reload(); await pg.wait_for_timeout(500); await tab(pg, 'ai')
         await pg.click('.card:has-text("Slept well.") summary:has-text("Show full analysis")')
         txt2 = await pg.inner_text('#view')
+        await pg.click('#aibal'); await pg.fill('#abal', '5'); await pg.click('#absv'); await pg.wait_for_timeout(400); await tab(pg, 'ai')
+        check('$5.00' in await pg.inner_text('#view') and 'API credit left' in await pg.inner_text('#view'), 'API credit balance shown')
         check('Morning analysis · free' in txt2 and 'Recovery' in txt2 and '**' not in txt2, 'morning analysis shows as free with expandable full text')
         check('Odd shape' in txt and 'First step' in txt and 'Second step' in txt and '<parameter' not in txt, 'oddly shaped AI answers still display as a list')
 
