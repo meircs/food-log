@@ -221,8 +221,9 @@ function wkChart(id, title, t, v, color, f, invert, label) {
     </svg><div class="small muted wkax"><span>0:00</span><span>${wkDur(T)}</span></div></div>`;
 }
 
+const PACE_COLS = ['#1f4fbf', '#2f7fe0', '#4aa8f0', '#79c43c', '#f4c430', '#f28c28', '#e0452c'];
 function wkRoute(r) {
-  // Web Mercator in "world pixels" at zoom z; pick the closest zoom that fits the route.
+  // OpenStreetMap tiles under an SVG route. Web Mercator "world pixels" at zoom z.
   const W = 340, H = 220, pad = 22;
   const wx = (lon, z) => (lon + 180) / 360 * 256 * 2 ** z;
   const wy = (lat, z) => { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * 2 ** z; };
@@ -230,28 +231,35 @@ function wkRoute(r) {
   const la0 = Math.min(...lats), la1 = Math.max(...lats), lo0 = Math.min(...lons), lo1 = Math.max(...lons);
   let z = 18;
   while (z > 3 && (wx(lo1, z) - wx(lo0, z) > W - 2 * pad || wy(la0, z) - wy(la1, z) > H - 2 * pad)) z--;
-  // Zoom in further between tile levels so the route fills the box.
   const sc = Math.min(2, (W - 2 * pad) / Math.max(1, wx(lo1, z) - wx(lo0, z)), (H - 2 * pad) / Math.max(1, wy(la0, z) - wy(la1, z)));
   const VW = W / sc, VH = H / sc, u = 1 / sc;
   const cx = (wx(lo0, z) + wx(lo1, z)) / 2, cy = (wy(la0, z) + wy(la1, z)) / 2, ox = cx - VW / 2, oy = cy - VH / 2;
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches, style = dark ? 'dark_all' : 'rastertiles/voyager';
+  // Tiles one zoom level deeper, drawn at half size, stay sharp on the iPhone's screen.
+  const tz = Math.min(19, z + 1), ts = 256 / 2 ** (tz - z), pct = (v, of) => `${(v / of * 100).toFixed(3)}%`;
   let tiles = '';
-  for (let tx = Math.floor(ox / 256); tx <= Math.floor((ox + VW) / 256); tx++)
-    for (let ty = Math.floor(oy / 256); ty <= Math.floor((oy + VH) / 256); ty++) {
-      const sub = 'abcd'[(tx + ty) & 3];
-      tiles += `<image href="https://${sub}.basemaps.cartocdn.com/${style}/${z}/${tx}/${ty}@2x.png" x="${tx * 256 - ox}" y="${ty * 256 - oy}" width="256" height="256"/>`;
-    }
+  for (let tx = Math.floor(ox / ts); tx <= Math.floor((ox + VW) / ts); tx++)
+    for (let ty = Math.floor(oy / ts); ty <= Math.floor((oy + VH) / ts); ty++)
+      tiles += `<img alt="" loading="lazy" crossorigin="anonymous" src="https://tile.openstreetmap.org/${tz}/${tx}/${ty}.png" style="left:${pct(tx * ts - ox, VW)};top:${pct(ty * ts - oy, VH)};width:${pct(ts + 0.5, VW)};height:${pct(ts + 0.5, VH)}">`;
   const P = p => [(wx(p[1], z) - ox).toFixed(1), (wy(p[0], z) - oy).toFixed(1)];
-  const d = r.map((p, i) => (i ? 'L' : 'M') + P(p).join(',')).join('');
+  const hasSpd = r.filter(p => p[2] > 0.3).length > r.length / 2;
+  let lines = '';
+  const whole = r.map((p, i) => (i ? 'L' : 'M') + P(p).join(',')).join('');
+  lines += `<path d="${whole}" fill="none" stroke="#fff" stroke-width="${7 * u}" stroke-linejoin="round" stroke-linecap="round" opacity=".95"/>`;
+  if (hasSpd) {
+    const sp = r.map(p => p[2] > 0.3 ? p[2] : null), sm = wkSmooth(sp, 2);
+    const vals = sm.filter(v => v != null).sort((a, b) => a - b), lo = vals[Math.floor(vals.length * 0.05)], hi = vals[Math.floor(vals.length * 0.95)];
+    const col = v => v == null ? PACE_COLS[0] : PACE_COLS[Math.max(0, Math.min(6, Math.round((v - lo) / Math.max(0.01, hi - lo) * 6)))];
+    for (let i = 1; i < r.length; i++)
+      lines += `<path d="M${P(r[i - 1]).join(',')}L${P(r[i]).join(',')}" stroke="${col(sm[i])}" stroke-width="${4.5 * u}" stroke-linecap="round" fill="none"/>`;
+  } else lines += `<path d="${whole}" fill="none" stroke="#2b6cf0" stroke-width="${4.5 * u}" stroke-linejoin="round" stroke-linecap="round"/>`;
   const [sx, sy] = P(r[0]), [ex, ey] = P(r[r.length - 1]);
   const km = wkPathKm(r);
-  return `<div class="wkmap"><svg viewBox="0 0 ${VW.toFixed(1)} ${VH.toFixed(1)}" preserveAspectRatio="xMidYMid slice">
-    <rect width="${VW}" height="${VH}" fill="var(--line)"/>${tiles}
-    <path d="${d}" fill="none" stroke="#fff" stroke-width="${7 * u}" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>
-    <path d="${d}" fill="none" stroke="#2b6cf0" stroke-width="${4 * u}" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${ex}" cy="${ey}" r="${6 * u}" fill="#e5484d" stroke="#fff" stroke-width="${2.5 * u}"/><circle cx="${sx}" cy="${sy}" r="${6 * u}" fill="#20a464" stroke="#fff" stroke-width="${2.5 * u}"/>
-  </svg><div class="wkattr">© OpenStreetMap · © CARTO</div></div>
-  <div class="small muted wkrow" style="margin-top:6px"><span><span class="wkdot" style="background:#20a464;border-radius:50%"></span>Start <span class="wkdot" style="background:#e5484d;border-radius:50%;margin-left:10px"></span>Finish</span><span>${km ? `${r1(km)} km route` : ''}</span></div>`;
+  return `<div class="wkmap"><div class="wktiles">${tiles}</div>
+    <svg viewBox="0 0 ${VW.toFixed(2)} ${VH.toFixed(2)}" preserveAspectRatio="none">${lines}
+    <circle cx="${ex}" cy="${ey}" r="${6.5 * u}" fill="#e5484d" stroke="#fff" stroke-width="${2.5 * u}"/><circle cx="${sx}" cy="${sy}" r="${6.5 * u}" fill="#20a464" stroke="#fff" stroke-width="${2.5 * u}"/>
+  </svg><div class="wkattr">© OpenStreetMap contributors</div></div>
+  <div class="small muted wkrow" style="margin-top:8px"><span><span class="wkdot" style="background:#20a464;border-radius:50%"></span>Start <span class="wkdot" style="background:#e5484d;border-radius:50%;margin-left:10px"></span>Finish</span>
+  ${hasSpd ? `<span>Slower <span class="wkgrad"></span> Faster</span>` : `<span>${r1(km)} km route</span>`}</div>`;
 }
 
 function wkPathKm(r) {

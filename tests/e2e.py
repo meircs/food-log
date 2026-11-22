@@ -242,6 +242,15 @@ async def main():
             check('bpm' in await sh.locator('#wkl-hr').inner_text(), 'touching a chart shows the value'); await pg.mouse.up()
             check(await sh.locator('text=of the time in your target').count() == 1, 'planned workout target shown')
             await pg.click('#xclose'); await pg.wait_for_timeout(400)
+            await pg.click('[data-act="0"]'); await pg.wait_for_timeout(1200)
+            check(await pg.evaluate("document.body.style.position") == 'fixed', 'page behind the sheet is frozen')
+            await pg.evaluate('''() => { const sh = document.querySelector('.sheet'); sh.scrollTop = 0;
+              const T = y => [new Touch({identifier: 1, target: sh, clientX: 200, clientY: y})];
+              sh.dispatchEvent(new TouchEvent('touchstart', {touches: T(300), changedTouches: T(300), bubbles: true, cancelable: true}));
+              for (let y = 310; y <= 520; y += 30) sh.dispatchEvent(new TouchEvent('touchmove', {touches: T(y), changedTouches: T(y), bubbles: true, cancelable: true}));
+              sh.dispatchEvent(new TouchEvent('touchend', {touches: [], changedTouches: T(520), bubbles: true, cancelable: true})); }''')
+            await pg.wait_for_timeout(600)
+            check(await pg.locator('#bd').count() == 0 and await pg.evaluate("document.body.style.position") == '', 'dragging the sheet down closes it')
             await pg.click('[data-act="1"]'); await pg.wait_for_timeout(1200)
             check(await pg.locator('.sheet:has-text("Exercises"):has-text("Push up")').count() == 1, 'strength workout shows exercises')
             await pg.click('#xclose'); await pg.wait_for_timeout(400)
@@ -315,7 +324,7 @@ async def main():
         await pg.reload(); await pg.wait_for_timeout(1500); await ctx.set_offline(True)
         await pg.reload(wait_until='domcontentloaded'); await pg.wait_for_timeout(800)
         check(await pg.locator('#tabs button').count() == 6, 'app loads offline')
-        check(not pg.errors and not pg2.errors, 'no script errors on devices')
+        print('ERRS', pg.errors, pg2.errors); check(not pg.errors and not pg2.errors, 'no script errors on devices')
         await browser.close()
     httpd.shutdown(); print('\nAll tests passed.')
 

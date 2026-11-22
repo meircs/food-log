@@ -1,6 +1,6 @@
 // Offline cache for the Food log app. Bump CACHE when files change.
-const CACHE = 'food-log-v34';
-const TILES = 'map-tiles-v1'; // route map tiles, kept across app updates
+const CACHE = 'food-log-v35';
+const TILES = 'map-tiles-v2'; // route map tiles, kept across app updates
 const ASSETS = ['./', './index.html', './js/core.js', './js/sync.js', './js/food.js', './js/stats.js', './js/health.js', './js/workout.js', './js/more.js', './js/ai.js', './js/main.js', './manifest.json', './icon-180.png', './icon-512.png', './vendor/html5-qrcode.min.js'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -10,7 +10,7 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  if (new URL(e.request.url).hostname.endsWith('basemaps.cartocdn.com')) {
+  if (new URL(e.request.url).hostname === 'tile.openstreetmap.org') {
     // Map tiles: cache first, so routes you've opened show their map offline too.
     e.respondWith(caches.open(TILES).then(async c => (await c.match(e.request)) || fetch(e.request).then(res => { if (res.ok) c.put(e.request, res.clone()); return res; })));
     return;

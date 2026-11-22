@@ -113,21 +113,66 @@ function totals(list) {
 }
 
 // ---------- sheet ----------
+// The page behind is frozen while a sheet is open (iOS otherwise scrolls it),
+// and the sheet can be dragged down to close, like iOS sheets.
+let sheetLockY = null;
+function lockPage() {
+  if (sheetLockY !== null) return;
+  sheetLockY = window.scrollY;
+  Object.assign(document.body.style, { position: 'fixed', top: `-${sheetLockY}px`, left: '0', right: '0' });
+}
+function unlockPage() {
+  if (sheetLockY === null) return;
+  Object.assign(document.body.style, { position: '', top: '', left: '', right: '' });
+  window.scrollTo(0, sheetLockY); sheetLockY = null;
+}
 function openSheet(html, mount) {
   closeSheet(false);
   const bd = document.createElement('div'); bd.className = 'backdrop'; bd.id = 'bd';
   bd.innerHTML = `<div class="sheet" role="dialog"><div class="grab"></div><button class="xbtn" id="xclose" aria-label="Close">✕</button>${html}</div>`;
   bd.addEventListener('click', e => { if (e.target === bd) closeSheet(); });
   bd.querySelector('#xclose').onclick = closeSheet;
+  // Touches on the dimmed area never scroll anything.
+  bd.addEventListener('touchmove', e => { if (e.target === bd) e.preventDefault(); }, { passive: false });
+  lockPage();
   document.body.appendChild(bd);
+  dragToClose(bd.firstElementChild);
   mount && mount(bd.firstElementChild);
+}
+function dragToClose(sh) {
+  let y0 = null, dy = 0, t0 = 0, dragging = false;
+  sh.addEventListener('touchstart', e => {
+    const t = e.target;
+    if (e.touches.length !== 1 || t.closest('svg[data-wk], input, textarea, select, video, .noswipe')) { y0 = null; return; }
+    y0 = e.touches[0].clientY; dy = 0; t0 = Date.now(); dragging = false;
+  }, { passive: true });
+  sh.addEventListener('touchmove', e => {
+    if (y0 === null) return;
+    const d = e.touches[0].clientY - y0;
+    if (!dragging) {
+      if (d > 6 && sh.scrollTop <= 0) { dragging = true; sh.style.transition = 'none'; }
+      else if (Math.abs(d) > 6) { y0 = null; return; }   // normal scrolling inside the sheet
+      else return;
+    }
+    dy = Math.max(0, d); e.preventDefault();
+    sh.style.transform = `translateY(${dy}px)`;
+  }, { passive: false });
+  const end = () => {
+    if (!dragging) { y0 = null; return; }
+    const fast = dy / Math.max(1, Date.now() - t0) > 0.6;
+    dragging = false; y0 = null;
+    if (dy > 110 || (fast && dy > 40)) closeSheet();
+    else { sh.style.transition = 'transform .25s cubic-bezier(.2,.9,.25,1)'; sh.style.transform = ''; }
+  };
+  sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', end);
 }
 function closeSheet(animated = true) {
   stopScanner(); const b = $('#bd'); if (!b || b.dataset.closing) return;
   const sh = b.firstElementChild;
-  if (!animated || !sh) { b.remove(); return; }
+  if (!animated || !sh) { b.remove(); unlockPage(); return; }
   b.dataset.closing = '1'; b.id = 'bd-closing'; b.classList.add('closing'); b.style.pointerEvents = 'none';
   sh.style.transition = 'transform .26s cubic-bezier(.4,0,.8,.6)'; sh.style.transform = 'translateY(100%)';
+  unlockPage();
   setTimeout(() => b.remove(), 260);
 }
 // iOS-like day change: content slides out, the new day slides in with an ease-out curve.
