@@ -221,6 +221,7 @@ function renderTabs() {
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; state.addMeal = null; render('fade'); window.scrollTo(0, 0); });
 }
 function render(anim) {
+  if (!sliding) { const v0 = $('#view'); if (v0 && v0.style.transform && !v0.style.transition) { v0.style.transform = ''; v0.style.opacity = ''; } }
   renderHeader(); renderTabs();
   const v = $('#view'); if (v && anim) { v.classList.remove('in-left', 'in-right', 'fade'); void v.offsetWidth; v.classList.add(anim); }
   ({ today: viewToday, add: viewAdd, stats: viewStats, health: viewHealth, ai: viewAI, foods: viewFoods, more: viewMore })[state.tab]();

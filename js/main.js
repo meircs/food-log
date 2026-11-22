@@ -40,14 +40,13 @@ scheduleSync();
     if (mode === 'none' || e.touches.length !== 1) return;
     const t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
     if (!mode) {
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      if (sheet) mode = dy > 0 && Math.abs(dy) > Math.abs(dx) ? 'sheet' : 'none';
-      else if (Math.abs(dx) > Math.abs(dy) * 1.5 && (state.tab === 'today' || state.tab === 'add')) mode = 'day';
+      if (Math.abs(dx) < 24 && Math.abs(dy) < 10) return;
+      if (sheet || $('#bd')) mode = 'none';   // sheets handle their own drag-to-close
+      else if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 2 && (state.tab === 'today' || state.tab === 'add')) mode = 'day';
       else if (dy > 0 && startScroll <= 0 && window.scrollY <= 0 && settings.ghToken) mode = 'pull';
       else mode = 'none';
     }
-    if (mode === 'sheet') { sheet.style.transition = 'none'; sheet.style.transform = `translateY(${Math.max(0, dy)}px)`; }
-    if (mode === 'day' && !sliding) { const v = $('#view'); v.style.transition = 'none'; v.style.transform = `translateX(${dx * 0.85}px)`; v.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / window.innerWidth)); }
+    if (mode === 'day' && !sliding) { const v = $('#view'), m = Math.min(70, Math.abs(dx) * 0.4); v.style.transition = 'none'; v.style.transform = `translateX(${Math.sign(dx) * m}px)`; v.style.opacity = String(1 - m / 350); }  // short, damped nudge only
     if (mode === 'pull') {
       ptr = ptr || Object.assign(document.body.appendChild(document.createElement('div')), { id: 'ptr' });
       const p = Math.min(dy, 90); ptr.style.transform = `translate(-50%, ${p - 60}px)`; ptr.textContent = dy > 70 ? '↻ Release to sync' : '↓ Pull to sync';
@@ -55,9 +54,8 @@ scheduleSync();
   }, { passive: true });
   document.addEventListener('touchend', e => {
     const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy, fast = Date.now() - st < 600;
-    if (mode === 'sheet' && sheet) { sheet.style.transition = ''; if (dy > 110 || (fast && dy > 50)) closeSheet(); else sheet.style.transform = ''; }
     if (mode === 'day' && !sliding) { const v = $('#view');
-      if ((Math.abs(dx) > window.innerWidth * 0.25 || (fast && Math.abs(dx) > 50)) && !$('#bd')) slideDay(dx < 0 ? 1 : -1);
+      if ((Math.abs(dx) > 110 || (fast && Math.abs(dx) > 60)) && !$('#bd')) slideDay(dx < 0 ? 1 : -1);
       else { v.style.transition = 'transform .3s cubic-bezier(.2,.9,.25,1), opacity .2s'; v.style.transform = 'translateX(0)'; v.style.opacity = '1'; setTimeout(() => { v.style.transition = ''; v.style.transform = ''; v.style.opacity = ''; }, 320); } }
     if (mode === 'pull' && ptr) {
       if (dy > 70) { ptr.textContent = '↻ Syncing…'; store.set('remotePulled', 0); store.set('garminPulled', 0);
@@ -66,6 +64,15 @@ scheduleSync();
     }
     mode = null; sheet = null;
   }, { passive: true });
+  // iOS sometimes cancels a touch (system gesture, notification, scroll takeover): never leave the page half-dragged.
+  const snapBack = () => {
+    if (mode === 'day' && !sliding) { const v = $('#view'); if (v) { v.style.transition = 'transform .25s ease, opacity .2s'; v.style.transform = 'translateX(0)'; v.style.opacity = '1';
+      setTimeout(() => { v.style.transition = ''; v.style.transform = ''; v.style.opacity = ''; }, 260); } }
+    if (ptr) { const p = ptr; ptr = null; p.style.transform = 'translate(-50%,-60px)'; setTimeout(() => p.remove(), 200); }
+    mode = null; sheet = null;
+  };
+  document.addEventListener('touchcancel', snapBack, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) snapBack(); });
   document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });  // no double-tap zoom
   document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false }); // no pinch zoom (iOS)
 })();

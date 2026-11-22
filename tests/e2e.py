@@ -285,6 +285,12 @@ async def main():
         check(await pg.locator('.card:has-text("What affects your sleep") .sfrow').count() >= 3, 'sleep factors shown')
         await tab(pg, 'today'); await pg.wait_for_timeout(300)
         check(await pg.locator('.ring').count() == 2, 'calorie and protein rings')
+        await pg.evaluate('''() => { const v = document.querySelector('#view'); const T = x => [new Touch({identifier: 2, target: v, clientX: x, clientY: 400})];
+          v.dispatchEvent(new TouchEvent('touchstart', {touches: T(300), changedTouches: T(300), bubbles: true}));
+          for (let x = 280; x >= 120; x -= 40) v.dispatchEvent(new TouchEvent('touchmove', {touches: T(x), changedTouches: T(x), bubbles: true}));
+          v.dispatchEvent(new TouchEvent('touchcancel', {touches: [], changedTouches: T(120), bubbles: true})); }''')
+        await pg.wait_for_timeout(400)
+        check(await pg.evaluate("document.querySelector('#view').style.transform") in ('', 'none', 'translateX(0px)'), 'a cancelled swipe snaps the page back')
         check(await pg.locator('.plan:has-text("Green day"):has-text("protein is the gap")').count() == 1, "today's plan card")
         await pg.click('[data-pi="1"]'); await pg.wait_for_timeout(200)
         check(await pg.locator('[data-pi="1"].done').count() == 1, 'plan item can be ticked')
