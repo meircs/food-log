@@ -235,7 +235,7 @@ async def main():
             await pg.click('[data-act="0"]'); await pg.wait_for_timeout(400)
             await pg.wait_for_timeout(1200)
             sh = pg.locator('.sheet')
-            check(await sh.locator('text=Splits').count() == 1 and await sh.locator('text=Route').count() == 1, 'workout details show route and splits')
+            check(await sh.locator('text=Splits').count() == 1 and await sh.locator('.wkmap').count() == 1, 'workout details show route and splits')
             check(await sh.locator('svg[data-wk]').count() >= 4, 'workout details show charts')
             box = await sh.locator('svg[data-wk="hr"]').bounding_box()
             await pg.mouse.move(box['x'] + box['width'] / 2, box['y'] + 40); await pg.mouse.down(); await pg.wait_for_timeout(150)
