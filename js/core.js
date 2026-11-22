@@ -67,6 +67,8 @@ function bumpLib() { store.set('libRev', store.get('libRev', 0) + 1); store.set(
 const libDirty = () => store.get('libRev', 0) !== store.get('libSynced', 0);
 const saveEntries = () => { store.set('entries', entries); scheduleSync(); };
 const saveSettings = () => store.set('settings', settings);
+// One-time switch to his real goal: build muscle and lose fat (recomp), ~1,950 kcal (body goal plan: ~1,850-1,900 rest days, ~2,000 workout days).
+if (!settings.goalMigrated) { if (!settings.goal || settings.goal === 'maintain') settings.goal = 'recomp'; if (settings.kcal === 2200) settings.kcal = 1950; settings.goalMigrated = true; saveSettings(); }
 
 // ---------- helpers ----------
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }

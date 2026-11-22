@@ -1,7 +1,7 @@
 'use strict';
 /* More tab: sync settings, targets, export, backup. */
 function targetsHTML() {
-  const goal = settings.goal || 'maintain', s2 = suggestTargets(goal);
+  const goal = settings.goal || 'recomp', s2 = suggestTargets(goal);
   const opts = Object.entries(GOALS).map(([k, g]) => `<option value="${k}" ${k === goal ? 'selected' : ''}>${g[0]}</option>`).join('');
   if (!s2) return `<div class="small muted" style="margin-top:4px">Suggested targets appear once there's a week of Garmin data (needs the sync token).</div>`;
   const m = s2.m;
@@ -86,7 +86,7 @@ function viewMore() {
   $('#exa').onclick = () => shareFile(toCSV(entries), `food-all-${todayStr()}.csv`, 'text/csv');
   $('#unx').onclick = () => { if (confirm('Mark every entry as not exported? They will be included in the next export.')) { entries.forEach(e => e.exported = false); saveEntries(); render(); } };
   const gsel = $('#goal'); if (gsel) gsel.onchange = () => { settings.goal = gsel.value; saveSettings(); render(); };
-  const tga = $('#tgapply'); if (tga) tga.onclick = () => { const s2 = suggestTargets(settings.goal || 'maintain'); if (!s2) return;
+  const tga = $('#tgapply'); if (tga) tga.onclick = () => { const s2 = suggestTargets(settings.goal || 'recomp'); if (!s2) return;
     settings.kcal = s2.kcal; if (s2.protein) settings.protein = s2.protein; saveSettings(); render(); toast(`Targets set: ${fmt(settings.kcal)} kcal, ${settings.protein} g protein`); };
   $('#aisv').onclick = () => { const k = $('#aik').value.replace(/\s+/g, '');
     if (k && !/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(k)) return toast(`That doesn't look like a Claude API key (starts “${k.slice(0, 7)}”, ${k.length} chars)`);

@@ -48,7 +48,7 @@ function aiContext() {
   const sup = supps.map(x => { const k = days.slice(-7).filter(d => suppLog.some(l => l.date === d && l.suppId === x.id)).length; return `${x.name} ${k}/7`; }).join(', ');
   const todayEs = all.filter(e => e.date === todayStr()).map(e => `${e.time} ${e.name} ${r0(e.kcal)}kcal ${r0(e.p)}gP`).join('; ');
   const m = targetModel(), prev = aiHistory[0];
-  return `GOAL: ${(GOALS[settings.goal || 'maintain'] || GOALS.maintain)[0]}. Targets: ${settings.kcal} kcal, ${settings.protein} g protein/day. Height 169 cm. Garmin maintenance estimate: ${m.gAvg ? r0(m.gAvg) : 'unknown'} kcal/day.
+  return `GOAL: ${(GOALS[settings.goal || 'recomp'] || GOALS.maintain)[0]}. Targets: ${settings.kcal} kcal, ${settings.protein} g protein/day. Height 169 cm. Garmin maintenance estimate: ${m.gAvg ? r0(m.gAvg) : 'unknown'} kcal/day.
 LAST 14 DAYS (date,kcal,protein_g,carbs_g,fat_g,late_meal,caffeine_after_2pm,alcohol,workouts,sleep_h,sleep_score,hrv_ms,resting_hr,steps,body_battery_high,garmin_kcal_burned):
 ${rows.join('\n')}
 ('-' = no food logged that day; food values are estimates.)
