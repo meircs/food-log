@@ -54,6 +54,24 @@ function actDetail(a) {
   });
 }
 
+function wkTiles(d, run, km) {
+  const t = [];
+  const add = (v, k) => { if (v != null && v !== '–') t.push(`<div class="wkt"><div class="wkv">${v}</div><div class="wkk">${k}</div></div>`); };
+  add(km ? `${r1(km)}<small> km</small>` : null, 'Distance');
+  add(d.duration_s ? wkDur(d.duration_s) : null, 'Time');
+  if (run && d.avg_speed) add(`${wkPace(d.avg_speed)}<small> /km</small>`, 'Avg pace');
+  if (d.type && d.type.includes('cycling') && d.avg_speed) add(`${r1(d.avg_speed * 3.6)}<small> km/h</small>`, 'Avg speed');
+  if (d.total_sets) add(`${d.total_sets}`, 'Sets');
+  if (d.total_reps) add(`${d.total_reps}`, 'Reps');
+  add(d.avg_hr ? `${r0(d.avg_hr)}<small> bpm</small>` : null, 'Avg HR');
+  add(d.kcal != null ? `${r0(d.kcal)}<small> kcal</small>` : null, 'Calories');
+  add(d.load != null ? `${r0(d.load)}` : null, 'Training load');
+  add(d.max_hr ? `${r0(d.max_hr)}<small> bpm</small>` : null, 'Max HR');
+  add(d.elev_gain && km ? `${r0(d.elev_gain)}<small> m</small>` : null, 'Climb');
+  const n = t.length > 3 ? t.length - t.length % 3 : t.length;  // only full rows
+  return t.slice(0, Math.min(n, 6)).join('');
+}
+
 function wkFromCsv(a) {
   return { name: a.name, type: a.type, start: `${a.date} ${a.start}`, duration_s: a.dur != null ? a.dur * 60 : null, distance_m: a.km ? a.km * 1000 : null,
     kcal: a.kcal, avg_hr: a.hr, max_hr: a.max, aerobic_te: a.ate, anaerobic_te: a.ane, load: a.load,
@@ -65,20 +83,9 @@ function wkHtml(d, loading, missing) {
   const run = wkIsRun(d.type), km = d.distance_m ? d.distance_m / 1000 : null;
   const day = (d.start || '').slice(0, 10), time = (d.start || '').slice(11, 16);
   const te = TE_LABEL[d.te_label];
-  const tile = (v, k) => v == null || v === '–' ? '' : `<div class="wkt"><div class="wkv">${v}</div><div class="wkk">${k}</div></div>`;
   let h = `<h3>${WK_ICON(d.type)} ${esc(d.name || wkWords(d.type))}</h3>
     <div class="small muted">${day ? esc(shortDay(day, true)) : ''} · ${esc(time)}${te ? ` · <span class="wkchip">${te[0]}</span>` : ''}</div>
-    <div class="wkgrid">
-      ${tile(km ? `${r1(km)}<small> km</small>` : null, 'Distance')}
-      ${tile(wkDur(d.duration_s), 'Time')}
-      ${run && d.avg_speed ? tile(`${wkPace(d.avg_speed)}<small> /km</small>`, 'Avg pace') : ''}
-      ${!run && d.type && d.type.includes('cycling') && d.avg_speed ? tile(`${r1(d.avg_speed * 3.6)}<small> km/h</small>`, 'Avg speed') : ''}
-      ${d.total_sets ? tile(`${d.total_sets}`, 'Sets') : ''}${d.total_reps ? tile(`${d.total_reps}`, 'Reps') : ''}
-      ${tile(d.avg_hr ? `${r0(d.avg_hr)}<small> bpm</small>` : null, 'Avg HR')}
-      ${tile(d.max_hr ? `${r0(d.max_hr)}<small> bpm</small>` : null, 'Max HR')}
-      ${tile(d.kcal != null ? `${r0(d.kcal)}` : null, 'Calories')}
-      ${tile(d.load != null ? `${r0(d.load)}` : null, 'Training load')}
-    </div>`;
+    <div class="wkgrid">${wkTiles(d, run, km)}</div>`;
   if (loading) return h + `<div class="small muted" style="margin:14px 2px">Loading charts, route and splits…</div>`;
   if (missing) h += `<div class="small muted" style="margin:12px 2px">Full details for this workout aren't synced yet. Tap ↻ Sync from Garmin now, then open it again.</div>`;
 
@@ -95,7 +102,7 @@ function wkHtml(d, loading, missing) {
       if (tot) inT = `<div class="wkbar"><i style="width:${tin / tot * 100}%;background:var(--accent)"></i></div><div class="small">${r0(tin / tot * 100)}% of the time in your target ${hrStep.low}–${hrStep.high} bpm</div>`;
     }
     h += `<div class="card"><b>Planned workout · ${esc(d.workout.name || '')}</b>
-      ${(d.workout.steps || []).map(s => `<div class="small muted" style="margin-top:4px">${esc(wkWords(s.intensity))}${s.type === 'TIME' && s.value ? ` · ${r0(s.value / 60)} min` : s.type === 'DISTANCE' && s.value ? ` · ${r1(s.value / 1000)} km` : ''}${s.exercise ? ` · ${esc(wkWords(s.exercise))}` : ''}${s.target === 'HEART_RATE' && s.low ? ` · HR ${s.low}–${s.high}` : ''}</div>`).join('')}
+      ${(d.workout.steps || []).map(s => `<div class="small muted" style="margin-top:4px">${esc({ INTERVAL: 'Main set', WARMUP: 'Warm-up', COOLDOWN: 'Cool-down', RECOVERY: 'Recovery', REST: 'Rest', ACTIVE: 'Active' }[s.intensity] || wkWords(s.intensity))}${s.type === 'TIME' && s.value ? ` · ${r0(s.value / 60)} min` : s.type === 'DISTANCE' && s.value ? ` · ${r1(s.value / 1000)} km` : ''}${s.exercise ? ` · ${esc(wkWords(s.exercise))}` : ''}${s.target === 'HEART_RATE' && s.low ? ` · HR ${s.low}–${s.high}` : ''}</div>`).join('')}
       ${inT ? `<div style="margin-top:8px">${inT}</div>` : ''}</div>`;
   }
 
@@ -104,15 +111,15 @@ function wkHtml(d, loading, missing) {
   if (c.t && c.t.length > 3) {
     const pace = c.spd ? wkSmooth(c.spd.map(v => v && v > 0.5 ? 1000 / v : null), 5) : null;
     const charts = [
-      c.hr && ['hr', 'Heart rate', c.hr, '#e5484d', v => `${r0(v)} bpm`],
-      run && pace && ['pace', 'Pace', pace, 'var(--p)', v => `${wkPace(1000 / v)} /km`, true],
-      !run && c.spd && d.distance_m > 0 && ['spd', 'Speed', c.spd.map(v => v != null ? v * 3.6 : null), 'var(--p)', v => `${r1(v)} km/h`],
-      c.ele && d.distance_m > 0 && ['ele', 'Elevation', c.ele, 'var(--muted)', v => `${r0(v)} m`],
-      run && c.cad && ['cad', 'Cadence', c.cad.map(v => v > 20 ? v : null), 'var(--c)', v => `${r0(v)} spm`],
-      c.pwr && c.pwr.some(v => v) && ['pwr', 'Power', wkSmooth(c.pwr, 3), 'var(--f)', v => `${r0(v)} W`],
-      c.bb && c.bb.some(v => v != null) && ['bb', 'Body Battery', c.bb, 'var(--accent)', v => `${r0(v)}`],
+      c.hr && ['hr', 'Heart rate', c.hr, '#e5484d', v => `${r0(v)} bpm`, false, d.avg_hr && `avg ${r0(d.avg_hr)} · max ${r0(d.max_hr)} bpm`],
+      run && pace && ['pace', 'Pace', pace, 'var(--p)', v => `${wkPace(1000 / v)} /km`, true, d.avg_speed && `avg ${wkPace(d.avg_speed)}${d.fastest_1k_s ? ` · best km ${wkDur(d.fastest_1k_s)}` : ''}`],
+      !run && c.spd && d.distance_m > 0 && ['spd', 'Speed', c.spd.map(v => v != null ? v * 3.6 : null), 'var(--p)', v => `${r1(v)} km/h`, false, d.avg_speed && `avg ${r1(d.avg_speed * 3.6)} km/h`],
+      c.ele && d.distance_m > 0 && ['ele', 'Elevation', c.ele, 'var(--muted)', v => `${r0(v)} m`, false, d.elev_gain != null && `climb ${r0(d.elev_gain)} m`],
+      run && c.cad && ['cad', 'Cadence', c.cad.map(v => v > 20 ? v : null), 'var(--c)', v => `${r0(v)} spm`, false, d.cadence && `avg ${r0(d.cadence)} spm`],
+      c.pwr && c.pwr.some(v => v) && ['pwr', 'Power', wkSmooth(c.pwr, 3), 'var(--f)', v => `${r0(v)} W`, false, d.avg_power && `avg ${r0(d.avg_power)} · max ${r0(d.max_power)} W`],
+      c.bb && c.bb.some(v => v != null) && ['bb', 'Body Battery', c.bb, 'var(--accent)', v => `${r0(v)}`, false, (() => { const b = c.bb.filter(v => v != null); return `${r0(b[0])} → ${r0(b[b.length - 1])}`; })()],
     ].filter(Boolean);
-    h += `<div class="card"><b>Charts</b> <span class="small muted">· touch to see values</span>${charts.map(x => wkChart(x[0], x[1], c.t, x[2], x[3], x[4], x[5])).join('')}</div>`;
+    h += `<div class="card"><b>Charts</b> <span class="small muted">· touch to see values</span>${charts.map(x => wkChart(x[0], x[1], c.t, x[2], x[3], x[4], x[5], x[6])).join('')}</div>`;
   }
 
   // Km splits
@@ -144,7 +151,7 @@ function wkHtml(d, loading, missing) {
   // HR zones
   const z = d.hr_zones_s || [], zt = z.reduce((s, v) => s + (v || 0), 0);
   if (zt) h += `<div class="card"><b>Heart-rate zones</b><div class="wkbar">${z.map((v, i) => v ? `<i style="width:${v / zt * 100}%;background:${ZC[i]}"></i>` : '').join('')}</div>
-    ${z.map((v, i) => `<div class="wkrow small"><span><span class="wkdot" style="background:${ZC[i]}"></span>Zone ${i + 1} · ${ZN[i]}</span><span>${wkDur(v)} · ${r0(v / zt * 100)}%</span></div>`).join('')}</div>`;
+    ${z.map((v, i) => `<div class="wkrow small"${v ? '' : ' style="opacity:.45"'}><span><span class="wkdot" style="background:${ZC[i]}"></span>Zone ${i + 1} · ${ZN[i]}</span><span>${wkDur(v)} · ${r0(v / zt * 100)}%</span></div>`).join('')}</div>`;
   const pz = d.power_zones_s || [], pt = pz.reduce((s, v) => s + (v || 0), 0);
   if (pt) h += `<div class="card"><b>Power zones</b><div class="wkbar">${pz.map((v, i) => v ? `<i style="width:${v / pt * 100}%;background:${ZC[i]}"></i>` : '').join('')}</div>
     <div class="small muted">${pz.map((v, i) => `Z${i + 1} ${r0(v / pt * 100)}%`).join(' · ')}</div></div>`;
@@ -174,7 +181,7 @@ function wkHtml(d, loading, missing) {
   // Everything else
   const more = [
     d.moving_s && d.distance_m > 0 && d.duration_s - d.moving_s > 30 && ['Moving time', wkDur(d.moving_s)],
-    d.min_hr && ['Lowest HR', `${d.min_hr} bpm`],
+    d.min_hr && ['Heart rate range', `${r0(d.min_hr)}–${r0(d.max_hr)} bpm`],
     d.elev_gain != null && d.distance_m > 0 && ['Elevation gain / loss', `${d.elev_gain} / ${d.elev_loss ?? '–'} m`],
     d.steps && ['Steps', fmt(d.steps)],
     d.body_battery != null && ['Body Battery', `${d.body_battery > 0 ? '+' : ''}${d.body_battery}`],
@@ -192,7 +199,7 @@ function wkSmooth(v, n) {
   return v.map((x, i) => { if (x == null) return null; let s = 0, c = 0; for (let j = Math.max(0, i - n); j <= Math.min(v.length - 1, i + n); j++) if (v[j] != null) { s += v[j]; c++; } return c ? s / c : null; });
 }
 
-function wkChart(id, title, t, v, color, f, invert) {
+function wkChart(id, title, t, v, color, f, invert, label) {
   const W = 320, H = 90, P = 4;
   const vals = v.filter(x => x != null); if (vals.length < 3) return '';
   let lo = Math.min(...vals), hi = Math.max(...vals);
@@ -206,7 +213,7 @@ function wkChart(id, title, t, v, color, f, invert) {
   const avg = vals.reduce((s, x) => s + x, 0) / vals.length;
   const best = invert ? lo : hi;
   window._wk = window._wk || {}; window._wk[id] = { t, v, f, X, T, W };
-  return `<div class="wkc"><div class="wkrow small"><span><b>${title}</b></span><span class="muted" id="wkl-${id}">avg ${f(avg)} · ${invert ? 'best' : 'max'} ${f(best)}</span></div>
+  return `<div class="wkc"><div class="wkrow small"><span><b>${title}</b></span><span class="muted" id="wkl-${id}">${label || `avg ${f(avg)} · ${invert ? 'best' : 'max'} ${f(best)}`}</span></div>
     <svg id="wkc-${id}" data-wk="${id}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;touch-action:pan-y;display:block">
       <line x1="0" x2="${W}" y1="${Y(avg).toFixed(1)}" y2="${Y(avg).toFixed(1)}" stroke="var(--line)" stroke-dasharray="3 3"/>
       <path d="${path}" fill="none" stroke="${color}" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
@@ -215,20 +222,45 @@ function wkChart(id, title, t, v, color, f, invert) {
 }
 
 function wkRoute(r) {
-  const lat0 = r.reduce((s, p) => s + p[0], 0) / r.length, k = Math.cos(lat0 * Math.PI / 180);
-  const xs = r.map(p => p[1] * k), ys = r.map(p => -p[0]);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const span = Math.max(x1 - x0, y1 - y0) || 1e-4, W = 320, H = Math.max(140, Math.min(260, W * (y1 - y0) / Math.max(x1 - x0, 1e-6))), pad = 14;
-  const sc = Math.min((W - 2 * pad) / ((x1 - x0) || span), (H - 2 * pad) / ((y1 - y0) || span));
-  const ox = (W - (x1 - x0) * sc) / 2, oy = (H - (y1 - y0) * sc) / 2;
-  const P = i => [(ox + (xs[i] - x0) * sc).toFixed(1), (oy + (ys[i] - y0) * sc).toFixed(1)];
-  const d = r.map((_, i) => (i ? 'L' : 'M') + P(i).join(',')).join('');
-  const [sx, sy] = P(0), [ex, ey] = P(r.length - 1);
-  const metres = span * 111320; // rough width of the box
-  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;display:block;margin-top:6px;background:var(--bg);border-radius:10px">
-    <path d="${d}" fill="none" stroke="var(--p)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${ex}" cy="${ey}" r="5" fill="#e5484d" stroke="#fff" stroke-width="2"/><circle cx="${sx}" cy="${sy}" r="5" fill="#3fb37f" stroke="#fff" stroke-width="2"/>
-  </svg><div class="small muted" style="margin-top:4px"><span style="color:#3fb37f">●</span> start · <span style="color:#e5484d">●</span> finish · area about ${metres > 1000 ? `${r1(metres / 1000)} km` : `${r0(metres / 10) * 10} m`} across</div>`;
+  // Web Mercator in "world pixels" at zoom z; pick the closest zoom that fits the route.
+  const W = 340, H = 220, pad = 22;
+  const wx = (lon, z) => (lon + 180) / 360 * 256 * 2 ** z;
+  const wy = (lat, z) => { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * 2 ** z; };
+  const lats = r.map(p => p[0]), lons = r.map(p => p[1]);
+  const la0 = Math.min(...lats), la1 = Math.max(...lats), lo0 = Math.min(...lons), lo1 = Math.max(...lons);
+  let z = 18;
+  while (z > 3 && (wx(lo1, z) - wx(lo0, z) > W - 2 * pad || wy(la0, z) - wy(la1, z) > H - 2 * pad)) z--;
+  // Zoom in further between tile levels so the route fills the box.
+  const sc = Math.min(2, (W - 2 * pad) / Math.max(1, wx(lo1, z) - wx(lo0, z)), (H - 2 * pad) / Math.max(1, wy(la0, z) - wy(la1, z)));
+  const VW = W / sc, VH = H / sc, u = 1 / sc;
+  const cx = (wx(lo0, z) + wx(lo1, z)) / 2, cy = (wy(la0, z) + wy(la1, z)) / 2, ox = cx - VW / 2, oy = cy - VH / 2;
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches, style = dark ? 'dark_all' : 'rastertiles/voyager';
+  let tiles = '';
+  for (let tx = Math.floor(ox / 256); tx <= Math.floor((ox + VW) / 256); tx++)
+    for (let ty = Math.floor(oy / 256); ty <= Math.floor((oy + VH) / 256); ty++) {
+      const sub = 'abcd'[(tx + ty) & 3];
+      tiles += `<image href="https://${sub}.basemaps.cartocdn.com/${style}/${z}/${tx}/${ty}@2x.png" x="${tx * 256 - ox}" y="${ty * 256 - oy}" width="256" height="256"/>`;
+    }
+  const P = p => [(wx(p[1], z) - ox).toFixed(1), (wy(p[0], z) - oy).toFixed(1)];
+  const d = r.map((p, i) => (i ? 'L' : 'M') + P(p).join(',')).join('');
+  const [sx, sy] = P(r[0]), [ex, ey] = P(r[r.length - 1]);
+  const km = wkPathKm(r);
+  return `<div class="wkmap"><svg viewBox="0 0 ${VW.toFixed(1)} ${VH.toFixed(1)}" preserveAspectRatio="xMidYMid slice">
+    <rect width="${VW}" height="${VH}" fill="var(--line)"/>${tiles}
+    <path d="${d}" fill="none" stroke="#fff" stroke-width="${7 * u}" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>
+    <path d="${d}" fill="none" stroke="#2b6cf0" stroke-width="${4 * u}" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${ex}" cy="${ey}" r="${6 * u}" fill="#e5484d" stroke="#fff" stroke-width="${2.5 * u}"/><circle cx="${sx}" cy="${sy}" r="${6 * u}" fill="#20a464" stroke="#fff" stroke-width="${2.5 * u}"/>
+  </svg><div class="wkattr">© OpenStreetMap · © CARTO</div></div>
+  <div class="small muted wkrow" style="margin-top:6px"><span><span class="wkdot" style="background:#20a464;border-radius:50%"></span>Start <span class="wkdot" style="background:#e5484d;border-radius:50%;margin-left:10px"></span>Finish</span><span>${km ? `${r1(km)} km route` : ''}</span></div>`;
+}
+
+function wkPathKm(r) {
+  let m = 0;
+  for (let i = 1; i < r.length; i++) {
+    const [a, b] = [r[i - 1], r[i]], k = Math.cos((a[0] + b[0]) / 2 * Math.PI / 180);
+    m += Math.hypot((b[0] - a[0]) * 111320, (b[1] - a[1]) * 111320 * k);
+  }
+  return m / 1000;
 }
 
 function wkWire(root) {
