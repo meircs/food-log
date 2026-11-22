@@ -163,14 +163,63 @@ function viewAI() {
   }
   const [latest, ...older] = aiHistory;
   const spent = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).reduce((a, h) => a + (h.cost || 0), 0);
-  $('#view').innerHTML = `<button class="btn" id="aiup" ${aiBusy ? 'disabled' : ''}>${aiBusy ? '✦ Analyzing your data…' : '✦ Update'}</button>
+  $('#view').innerHTML = `<button class="btn" id="aiup" ${aiBusy ? 'disabled' : ''}>${aiBusy ? '✦ Analyzing your data…' : '✦ Update (API, quick)'}</button>${freeBtnHTML()}
     <div class="small muted" style="text-align:center;margin:6px 0 10px">${latest ? (() => { const n = aiHistory.filter(h => h.at >= new Date(Date.now() - 30 * 864e5).toISOString()).length; return `Last 30 days: ${n} update${n === 1 ? '' : 's'} · about $${spent.toFixed(2)}`; })() : 'Looks at your last 14 days, your goal and what you have eaten today.'}</div>
     ${aiCreditHTML()}
     ${latest ? safeCard(latest, true) : '<div class="empty">No analysis yet. Tap Update.</div>'}
     ${older.length ? `<h2>Earlier</h2>${older.slice(0, 10).map(h => safeCard(h, false)).join('')}` : ''}
     <div class="small muted" style="margin:12px 4px">Sends a summary of your numbers (not photos) to Claude through your API key. Estimates, not medical advice.</div>`;
   $('#aiup').onclick = aiUpdate;
+  const fb = $('#aifree'); if (fb) fb.onclick = freeAnalysis;
+  if (freeState()) pollFree();
   const ab = $('#aibal'); if (ab) ab.onclick = editAiCredit;
+}
+
+// ---------- free analysis via the Claude scheduled task (uses the Claude plan, not API credit) ----------
+// The app starts garmin-health's morning.yml workflow, which fires the routine's API trigger.
+// The routine takes a few minutes and writes its result into ai_history.json, which we poll for.
+let freeTimer = null;
+function freeState() { const s = store.get('freeRun', null); return s && Date.now() - s.t < 12 * 60000 ? s : null; }
+function freeBtnHTML() {
+  const f = freeState();
+  return `<button class="btn secondary" id="aifree" ${f ? 'disabled' : ''} style="margin-top:8px">${f ? `☀ Claude is analyzing… ${Math.max(1, Math.round((Date.now() - f.t) / 60000))} min (usually 3–5)` : '☀ Free analysis (Claude plan)'}</button>`;
+}
+async function freeAnalysis() {
+  if (freeState()) return;
+  if (!settings.ghToken) return toast('Connect GitHub in More first');
+  const api = `https://api.github.com/repos/${settings.ghRepo}/actions/workflows/morning.yml`;
+  const H = { Authorization: `Bearer ${settings.ghToken}`, Accept: 'application/vnd.github+json' };
+  const since = new Date(Date.now() - 10000).toISOString();
+  store.set('freeRun', { t: Date.now(), since }); viewAI();
+  try {
+    const d = await fetch(api + '/dispatches', { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: 'main' }) });
+    if (d.status === 403) throw new Error('Your GitHub token needs “Actions: Read and write”.');
+    if (d.status === 404) throw new Error('The morning workflow is missing in garmin-health.');
+    if (!d.ok) throw new Error('GitHub error ' + d.status);
+    for (let i = 0; i < 25; i++) {                       // confirm the routine actually started (~10–60 s)
+      await new Promise(r => setTimeout(r, 4000));
+      const r = await fetch(`${api}/runs?event=workflow_dispatch&per_page=1&created=${encodeURIComponent('>=' + since)}`, { headers: H, cache: 'no-store' });
+      if (!r.ok) continue;
+      const run = ((await r.json()).workflow_runs || [])[0];
+      if (run && run.status === 'completed') {
+        if (run.conclusion !== 'success') throw new Error('Claude didn’t start. Check that the routine token is saved in GitHub (ROUTINE_FIRE_TOKEN).');
+        break;
+      }
+    }
+    toast('Claude is on it. Results in a few minutes.');
+    pollFree();
+  } catch (e) { store.set('freeRun', null); viewAI(); toast(e.message === 'Failed to fetch' ? 'Could not reach GitHub.' : e.message); }
+}
+function pollFree() {
+  clearTimeout(freeTimer);
+  const f = freeState(); if (!f) { freeTimer = null; return; }
+  freeTimer = setTimeout(async () => {
+    try { await pullAI(); } catch (e) { }
+    const got = aiHistory.find(h => h.model === 'morning' && h.at > f.since);
+    if (got) { store.set('freeRun', null); toast('New analysis ready'); if (state.tab === 'ai') viewAI(); if (state.tab === 'today') render(); return; }
+    if (state.tab === 'ai') { const b = $('#aifree'); if (b) b.outerHTML = freeBtnHTML(); }
+    pollFree();
+  }, 25000);
 }
 
 async function syncAI() {
