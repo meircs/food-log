@@ -53,8 +53,7 @@ function planCardHTML() {
   const today = (typeof aiHistory !== 'undefined' ? aiHistory : []).filter(h => localDay(h.at) === todayStr());
   const h = today.find(x => x.model === 'morning') || today[0];
   if (!h) {
-    const hr = new Date().getHours();
-    return hr < 12 ? `<div class="card plan muted small">☀ Today's plan arrives in the AI tab after the morning analysis (around ${[0, 6].includes(new Date().getDay()) ? '10:05' : '8:45'}).</div>` : '';
+    return `<div class="card plan small muted spread"><span>☀ No plan for today yet.</span><button class="linkbtn small" id="planai">Get today's plan ›</button></div>`;
   }
   let d = h.data || {}; try { if (typeof normAI === 'function') d = normAI(d) || d; } catch (e) { }
   const head = d.headline || '', lvl = (head.match(/^(Green|Yellow|Red)\b/i) || [])[1];
