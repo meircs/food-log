@@ -192,6 +192,7 @@ async function freeAnalysis() {
   const since = new Date(Date.now() - 10000).toISOString();
   store.set('freeRun', { t: Date.now(), since }); viewAI();
   try {
+    try { await syncGarminNow(() => {}); } catch (e) { }   // fresh Garmin data first, so Claude doesn't have to wait for it
     const d = await fetch(api + '/dispatches', { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: 'main' }) });
     if (d.status === 403) throw new Error('Your GitHub token needs “Actions: Read and write”.');
     if (d.status === 404) throw new Error('The morning workflow is missing in garmin-health.');
