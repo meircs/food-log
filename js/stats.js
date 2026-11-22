@@ -5,12 +5,14 @@ let garmin = store.get('garmin', {});   // date -> {total, active}
 let weights = store.get('weights', []); // [{date, kg}]
 let health = store.get('health', {});   // date -> Garmin daily metrics
 let acts = store.get('acts', []);       // workouts, newest first
+let bpRemote = store.get('bpRemote', []);   // bp.csv rows [{date,time,period,s,d,p,app}]
+let sets = store.get('sets', []);           // strength_sets.csv [{aid,date,ex,sub,sets,reps,kg,dur}]
 async function pullGarmin(force) {
   if (!settings.ghToken || !navigator.onLine) return;
   if (!force && Date.now() - store.get('garminPulled', 0) < 10 * 60000) return;
   const dir = settings.ghPath.replace(/[^/]*$/, '');
   const read = async f => { const g = await gh('GET', null, dir + f); return g.ok ? parseCSV(b64ToText((await g.json()).content || '')) : null; };
-  const [d, w, a] = await Promise.all([read('daily.csv'), read('weight.csv'), read('activities.csv')]);
+  const [d, w, a, bp, ss] = await Promise.all([read('daily.csv'), read('weight.csv'), read('activities.csv'), read('bp.csv'), read('strength_sets.csv')]);
   if (d) { const h = d.shift(); const iD = h.indexOf('date'), iT = h.indexOf('total_kcal'), iA = h.indexOf('active_kcal');
     garmin = {}; d.forEach(r => { if (r[iD] && r[iT]) garmin[r[iD]] = { total: num(r[iT]), active: num(r[iA]) }; }); store.set('garmin', garmin);
     const F = { score: 'sleep_score', hrs: 'sleep_hours', deep: 'deep_h', light: 'light_h', rem: 'rem_h', awake: 'awake_h', hrv: 'hrv_last_night', hrvWk: 'hrv_weekly_avg',
@@ -25,12 +27,22 @@ async function pullGarmin(force) {
   if (a) { const h = a.shift(); const ix = k => h.indexOf(k);
     acts = a.filter(r => r[ix('date')]).map(r => ({ date: r[ix('date')], start: (r[ix('start_local')] || '').slice(11, 16), name: r[ix('name')], type: r[ix('type')],
       dur: num(r[ix('duration_min')]), km: num(r[ix('distance_km')]), hr: num(r[ix('avg_hr')]), kcal: num(r[ix('kcal')]), ate: num(r[ix('aerobic_te')]), load: num(r[ix('training_load')]),
-      id: r[ix('activity_id')], max: num(r[ix('max_hr')]), ane: num(r[ix('anaerobic_te')]), z: [1, 2, 3, 4, 5].map(i => ix(`hr_z${i}_min`) >= 0 ? num(r[ix(`hr_z${i}_min`)]) : null) }))
+      id: r[ix('activity_id')], max: num(r[ix('max_hr')]), ane: num(r[ix('anaerobic_te')]), z: [1, 2, 3, 4, 5].map(i => ix(`hr_z${i}_min`) >= 0 ? num(r[ix(`hr_z${i}_min`)]) : null),
+      f1k: ix('fastest_1k_s') >= 0 ? num(r[ix('fastest_1k_s')]) || null : null, fmi: ix('fastest_mile_s') >= 0 ? num(r[ix('fastest_mile_s')]) || null : null,
+      f5k: ix('fastest_5k_s') >= 0 ? num(r[ix('fastest_5k_s')]) || null : null, f10k: ix('fastest_10k_s') >= 0 ? num(r[ix('fastest_10k_s')]) || null : null }))
       .sort((x, y) => (y.date + y.start).localeCompare(x.date + x.start));
     store.set('acts', acts); }
-  if (w) { const h = w.shift(); const iD = h.indexOf('date'), iK = h.indexOf('weight_kg');
-    const by = {}; w.forEach(r => { if (r[iD] && num(r[iK]) > 0) by[r[iD]] = num(r[iK]); });
-    weights = Object.keys(by).sort().map(k => ({ date: k, kg: by[k] })); store.set('weights', weights); }
+  if (w) { const h = w.shift(); const iD = h.indexOf('date'), iK = h.indexOf('weight_kg'), iF = h.indexOf('body_fat_pct');
+    const by = {}; w.forEach(r => { if (r[iD] && num(r[iK]) > 0) by[r[iD]] = { kg: num(r[iK]), bf: iF >= 0 && num(r[iF]) > 0 ? num(r[iF]) : (by[r[iD]] || {}).bf || null }; });
+    weights = Object.keys(by).sort().map(k => ({ date: k, kg: by[k].kg, bf: by[k].bf })); store.set('weights', weights); }
+  if (bp) { const h = bp.shift(); const ix = k => h.indexOf(k), n = (r, k) => ix(k) >= 0 && num(r[ix(k)]) > 0 ? num(r[ix(k)]) : null;
+    bpRemote = bp.filter(r => r[ix('date')]).map(r => ({ date: r[ix('date')], time: r[ix('time')] || '', period: r[ix('period')] || '', s1: n(r, 'systolic_1'), d1: n(r, 'diastolic_1'), p1: n(r, 'pulse_1'),
+      s2: n(r, 'systolic_2'), d2: n(r, 'diastolic_2'), p2: n(r, 'pulse_2'), notes: r[ix('notes')] || '' })).filter(x => x.s1 && x.d1);
+    store.set('bpRemote', bpRemote); }
+  if (ss) { const h = ss.shift(); const ix = k => h.indexOf(k);
+    sets = ss.filter(r => r[ix('date')]).map(r => ({ aid: r[ix('activity_id')], date: r[ix('date')], ex: r[ix('exercise')], sub: r[ix('sub_exercise')] || '', sets: num(r[ix('sets')]), reps: num(r[ix('reps')]),
+      kg: num(r[ix('max_weight_kg')]) || null, dur: num(r[ix('duration_s')]) || null }));
+    store.set('sets', sets); }
   store.set('garminPulled', Date.now());
   if (state.tab === 'stats') viewStats();
   if (state.tab === 'health') viewHealth();

@@ -7,16 +7,7 @@ function viewToday() {
   const left = settings.kcal - t.kcal;
   const pct = Math.min(100, settings.kcal ? t.kcal / settings.kcal * 100 : 0);
   const pPct = settings.protein ? Math.min(100, t.p / settings.protein * 100) : 0;
-  let html = `<div class="card">
-    <div class="spread"><div><div class="big">${fmt(t.kcal)}</div><div class="muted small">of ${fmt(settings.kcal)} kcal</div></div>
-    <div style="text-align:right"><div style="font-size:22px;font-weight:650;color:${left < 0 ? 'var(--warn)' : 'var(--accent)'}">${fmt(Math.abs(left))}</div>
-    <div class="muted small">${left < 0 ? 'over' : 'left'}</div></div></div>
-    <div class="bar ${left < 0 ? 'over' : ''}"><i style="width:${pct}%"></i></div>
-    <div class="macros">
-      <div class="macro"><span class="small muted"><i class="dot" style="background:var(--p)"></i>Protein</span><b>${r0(t.p)} g</b><span class="small muted">${r0(pPct)}% of ${settings.protein}</span></div>
-      <div class="macro"><span class="small muted"><i class="dot" style="background:var(--c)"></i>Carbs</span><b>${r0(t.c)} g</b></div>
-      <div class="macro"><span class="small muted"><i class="dot" style="background:var(--f)"></i>Fat</span><b>${r0(t.f)} g</b></div>
-    </div></div>
+  let html = `${planCardHTML()}${ringsHTML(t)}
     ${burnLine(t.kcal)}
     <div class="small muted" id="syncline" style="margin:-4px 4px 8px">${esc(syncStatus())}</div>
     ${suppCard()}
@@ -31,6 +22,7 @@ function viewToday() {
   if (day.length) html += `<button class="btn secondary" id="goadd" style="margin-top:16px">＋ Add food</button>`;
   $('#view').innerHTML = html;
   const g = $('#goadd'); if (g) g.onclick = () => { state.tab = 'add'; render(); };
+  wirePlanCard();
   $('#view').querySelectorAll('[data-supp]').forEach(b => b.onclick = () => toggleSupp(b.dataset.supp));
   const se = $('#suppedit'); if (se) se.onclick = editSupps;
   $('#view').querySelectorAll('.item').forEach(b => b.onclick = () => { const e = day.find(x => x.id === b.dataset.id); e.remote ? showRemote(e) : editEntry(e); });

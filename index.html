@@ -121,6 +121,20 @@ nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px)}
 .wkattr{position:absolute;right:6px;bottom:4px;font-size:9px;color:#444;background:rgba(255,255,255,.8);padding:1px 5px;border-radius:5px}
 .wkgrad{display:inline-block;width:64px;height:6px;border-radius:3px;margin:0 4px;vertical-align:1px;background:linear-gradient(90deg,#1f4fbf,#2f7fe0,#4aa8f0,#79c43c,#f4c430,#f28c28,#e0452c)}
 .item[data-act]{-webkit-tap-highlight-color:transparent;transition:background .15s}.item[data-act]:active{background:var(--line)}
+.hsec{margin-bottom:10px}
+.plan{padding-top:12px}.plannext{margin-top:8px;display:flex;flex-direction:column;gap:2px}
+.planitem{display:flex;gap:10px;align-items:flex-start;text-align:left;background:none;border:0;padding:6px 0;color:var(--ink);font:inherit;font-size:15px;line-height:1.35;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.pbox{flex:none;width:20px;height:20px;border-radius:6px;border:2px solid var(--line);display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;margin-top:1px;transition:all .15s}
+.planitem.done .pbox{background:var(--accent);border-color:var(--accent)}.planitem.done span:last-child{color:var(--muted);text-decoration:line-through}
+.rings{display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:center}.ringbox{display:flex;flex-direction:column;align-items:center;gap:2px}.ring{width:118px;height:118px}
+.tcap{margin-top:2px;min-height:18px}
+.prgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.pr{position:relative;background:var(--bg);border-radius:12px;padding:9px 10px}
+.pr.new{box-shadow:inset 0 0 0 1.5px var(--accent)}.prv{font-size:19px;font-weight:700;margin:2px 0;font-variant-numeric:tabular-nums}
+.prnew{display:inline-block;font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:1px 5px;vertical-align:2px}
+.sftop{margin:10px 0 4px;padding:9px 11px;border-radius:10px;background:var(--bg);font-size:14px}
+.sfrow{margin-top:12px}.sfpair{display:grid;grid-template-columns:62px 1fr;gap:3px 8px;align-items:center;margin-top:5px}
+.sfbar{display:flex;align-items:center;gap:6px}.sfbar i{display:block;height:8px;border-radius:4px}.sfbar span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.docsum{white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace;background:var(--card);border-radius:10px;padding:10px;margin:10px 0;max-height:50vh;overflow:auto}
 .wkc{margin-top:12px}.wkax{display:flex;justify-content:space-between;margin-top:1px}
 @keyframes up{from{transform:translateY(100%)}to{transform:none}}
 @keyframes bdin{from{background:rgba(0,0,0,0)}to{background:rgba(0,0,0,.35)}}
@@ -145,6 +159,7 @@ nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px)}
 <script src="js/stats.js"></script>
 <script src="js/health.js"></script>
 <script src="js/workout.js"></script>
+<script src="js/progress.js"></script>
 <script src="js/more.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/main.js"></script>

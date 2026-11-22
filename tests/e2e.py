@@ -39,10 +39,15 @@ def fixtures():
         d = D(n); late_prev = (n + 1) % 4 == 0
         score = 60 + rnd.randint(0, 25) - (12 if late_prev else 0)
         daily.append(f'{d},{score},{6.5 + rnd.random():.2f},1.5,4.0,1.0,0.3,{D(n + 1)} 23:30,{d} 07:00,58,16,1,{38 + rnd.randint(0, 8) - (6 if (n + 1) % 5 == 0 else 0)},40,BALANCED,37,47,{54 + rnd.randint(0, 3)},50,150,25,90,{60 + rnd.randint(0, 30)},{10 + rnd.randint(0, 10)},50,50,{rnd.randint(3000, 12000)},5.0,8,{rnd.randint(150, 600)},{2100 + rnd.randint(0, 400) if n else 1400},{rnd.randint(0, 30)},{rnd.randint(0, 15)},15,95')
-    weight = ['date,time,weight_kg,body_fat_pct,source,notes'] + [f'{D(n)},08:00,{70 - (21 - n) * 0.03:.2f},16,manual,' for n in range(21, -1, -3)]
-    acts = ['activity_id,date,start_local,name,type,duration_min,distance_km,avg_hr,max_hr,kcal,aerobic_te,anaerobic_te,training_load,hr_z1_min,hr_z2_min,hr_z3_min,hr_z4_min,hr_z5_min']
+    weight = ['date,time,weight_kg,body_fat_pct,source,notes'] + [f'{D(n)},08:00,{70 - (21 - n) * 0.03:.2f},{16 - (21 - n) * 0.05:.1f},manual,' for n in range(21, -1, -3)]
+    acts = ['activity_id,date,start_local,name,type,duration_min,distance_km,avg_hr,max_hr,kcal,aerobic_te,anaerobic_te,training_load,hr_z1_min,hr_z2_min,hr_z3_min,hr_z4_min,hr_z5_min,fastest_1k_s,fastest_mile_s,fastest_5k_s,fastest_10k_s,elev_gain_m,total_sets,total_reps']
     for n in range(0, 60, 2):
-        acts.append(f'{1000 + n},{D(n)},{D(n)} 18:00,Test Run,running,30,5,150,170,300,3.0,1.0,60,1,5,10,10,4')
+        acts.append(f'{1000 + n},{D(n)},{D(n)} 18:00,Test Run,running,30,5,150,170,300,3.0,1.0,60,1,5,10,10,4,{330 + n},{560 + n},{1750 + n},,20,,')
+    bp = ['date,time,period,systolic_1,diastolic_1,pulse_1,systolic_2,diastolic_2,pulse_2,notes', f'{D(5)},08:00,morning,140,90,70,,,,"day 1 (left out of the 7-day average)"',
+          f'{D(4)},08:00,morning,120,76,62,,,,', f'{D(2)},20:00,evening,122,78,64,,,,', f'{D(0)},08:00,morning,121,77,60,,,,']
+    sets_csv = ['row_id,activity_id,date,exercise,sub_exercise,sets,reps,max_weight_kg,volume_kg,duration_s']
+    for i, n in enumerate([20, 13, 6]):
+        sets_csv += [f'{2000 + i}-PUSH_UP-,{2000 + i},{D(n)},PUSH_UP,,3,{30 + i * 3},,,60', f'{2000 + i}-SQUAT-,{2000 + i},{D(n)},SQUAT,,2,{20 + i * 2},,,50', f'{2000 + i}-PLANK-,{2000 + i},{D(n)},PLANK,,3,0,,,{120 + i * 15}']
     import json, math
     T = list(range(0, 1800, 10))
     run = {'id': 1000, 'name': 'Test Run', 'type': 'running', 'start': f'{D(0)} 18:00', 'duration_s': 1800, 'moving_s': 1700, 'distance_m': 5000,
@@ -59,6 +64,12 @@ def fixtures():
     gym = {'id': 1002, 'name': 'Strength', 'type': 'running', 'start': f'{D(2)} 18:00', 'duration_s': 900, 'kcal': 90, 'avg_hr': 130, 'total_sets': 6, 'total_reps': 60,
            'sets': [{'exercise': 'PUSH_UP', 'sets': 3, 'reps': 35}, {'exercise': 'ROW', 'sets': 3, 'reps': 25, 'max_kg': 5.0}, {'exercise': 'PLANK', 'sets': 3, 'reps': 0, 'duration_s': 155}]}
     extra = {'data/activities/1000.json': json.dumps(run), 'data/activities/1002.json': json.dumps(gym)}
+    import datetime
+    morning = {'at': (datetime.datetime.utcnow() - datetime.timedelta(minutes=30)).isoformat() + 'Z', 'model': 'morning', 'cost': 0, 'data': {
+        'headline': 'Green: strength 30 min tonight, protein is the gap', 'summary': 'Slept 7.1 h.', 'next': ['Strength 30 min at 7 pm', 'Protein at breakfast', 'Screens off 11:40 pm'],
+        'food_idea': 'Greek yogurt', 'watch': '', 'full': '## Sat — Green\n## Today\n- Strength: 3 rounds\n- Bed by 12:00'}}
+    extra['data/ai_history.json'] = json.dumps({'history': [morning]})
+    extra['data/bp.csv'] = '\n'.join(bp) + '\n'; extra['data/strength_sets.csv'] = '\n'.join(sets_csv) + '\n'
     return {**extra, 'data/food.csv': '\n'.join(food) + '\n', 'data/daily.csv': '\n'.join(daily) + '\n',
             'data/weight.csv': '\n'.join(weight) + '\n', 'data/activities.csv': '\n'.join(acts) + '\n'}
 
@@ -225,12 +236,16 @@ async def main():
         print('Blood pressure')
         await pg.click('#bplog'); await pg.fill('#s1', '118'); await pg.fill('#d1', '76'); await pg.fill('#p1', '70'); await pg.fill('#s2', '116'); await pg.fill('#d2', '72'); await pg.click('#bpsv'); await pg.wait_for_timeout(2500)
         bp = repo.files.get('data/bp.csv', {'text': ''})['text'].splitlines()
-        check(len(bp) == 2 and bp[0].startswith('date,time,period,systolic_1') and ',118,76,70,116,72,' in bp[1] and 'app:' in bp[1], 'BP saved to bp.csv with header')
+        check(bp[0].startswith('date,time,period,systolic_1') and ',118,76,70,116,72,' in bp[-1] and 'app:' in bp[-1], 'BP saved to bp.csv')
         check('117/74' in await pg.inner_text('#bplog'), 'Today shows the BP average')
 
         print('Sync from Garmin button')
         await tab(pg, 'health'); await pg.wait_for_timeout(500); await pg.click('#gsync'); await pg.wait_for_timeout(3500)
         check(getattr(repo, 'dispatches', 0) >= 1, 'Sync button starts the Garmin workflow')
+        await pg.click('#hsec button[data-s="training"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('.prgrid .pr').count() >= 4, 'personal records shown')
+        check(await pg.locator('.card:has-text("Strength progress"):has-text("Push up")').count() == 1, 'strength progress shown')
+        check(await pg.locator('[data-act]').count() > 0, 'workouts listed under Training')
         if await pg.locator('[data-act]').count():
             await pg.click('[data-act="0"]'); await pg.wait_for_timeout(400)
             await pg.wait_for_timeout(1200)
@@ -255,6 +270,21 @@ async def main():
             check(await pg.locator('.sheet:has-text("Exercises"):has-text("Push up")').count() == 1, 'strength workout shows exercises')
             await pg.click('#xclose'); await pg.wait_for_timeout(400)
         else: print('  (no workouts in mock data, detail test skipped)')
+        await pg.click('#hsec button[data-s="body"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('#bwt').count() == 1 and await pg.locator('#bbf').count() == 1, 'body composition charts shown')
+        await pg.click('#bwt'); await pg.wait_for_timeout(200)
+        check('kg' in await pg.locator('#bwt-cap').inner_text(), 'tapping weight chart shows a value')
+        check(await pg.locator('.card:has-text("Blood pressure") .big').inner_text() == '120/76', 'BP 7-day average (app reading counted once)')
+        await pg.click('#bpdoc'); await pg.wait_for_timeout(500)
+        check('7-day average: 120/76' in await pg.locator('.docsum').inner_text(), 'doctor summary text')
+        await pg.click('#xclose'); await pg.wait_for_timeout(400)
+        await pg.click('#hsec button[data-s="overview"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('.card:has-text("What affects your sleep") .sfrow').count() >= 3, 'sleep factors shown')
+        await tab(pg, 'today'); await pg.wait_for_timeout(300)
+        check(await pg.locator('.ring').count() == 2, 'calorie and protein rings')
+        check(await pg.locator('.plan:has-text("Green day"):has-text("protein is the gap")').count() == 1, "today's plan card")
+        await pg.click('[data-pi="1"]'); await pg.wait_for_timeout(200)
+        check(await pg.locator('[data-pi="1"].done').count() == 1, 'plan item can be ticked')
         await tab(pg, 'today'); await pg.wait_for_timeout(300)
 
         print('Edit and delete entries logged via Claude')
@@ -271,7 +301,7 @@ async def main():
         await tab(pg, 'ai')
         check(await pg.locator('#aiset').count() == 1, 'AI tab asks for a key first')
         await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-bad' + 'x' * 30); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(8000)
-        check(await pg.locator('.aimain').count() == 0, 'rejected key shows no analysis')
+        check(await pg.locator('.aimain').count() == await pg.locator('.aimain:has-text("Morning analysis")').count(), 'rejected key adds no analysis')
         await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-' + 'k' * 40); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(9000)
         check('Protein is your gap' in await pg.inner_text('.aimain') and '1.7¢' in await pg.inner_text('.aimain'), 'Update shows analysis with cost')
         ctxt = CLAUDE_CALLS[-1]['messages'][0]['content']
@@ -286,7 +316,7 @@ async def main():
         morning = {'at': '2026-01-02T13:44:00Z', 'model': 'morning', 'cost': 0, 'data': {'headline': 'Green day', 'summary': 'Slept well.', 'next': ['Strength 30 min'], 'full': '## Analysis\n- **Recovery** good\n- HRV 44'}}
         await pg.evaluate("h => { const a = JSON.parse(localStorage['fl.aiHistory']); a.push(h); localStorage['fl.aiHistory'] = JSON.stringify(a); }", morning)
         await pg.reload(); await pg.wait_for_timeout(500); await tab(pg, 'ai')
-        await pg.click('summary:has-text("Show full analysis")')
+        await pg.click('.card:has-text("Slept well.") summary:has-text("Show full analysis")')
         txt2 = await pg.inner_text('#view')
         check('Morning analysis · free' in txt2 and 'Recovery' in txt2 and '**' not in txt2, 'morning analysis shows as free with expandable full text')
         check('Odd shape' in txt and 'First step' in txt and 'Second step' in txt and '<parameter' not in txt, 'oddly shaped AI answers still display as a list')
