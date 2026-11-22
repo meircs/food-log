@@ -24,7 +24,8 @@ async function pullGarmin(force) {
     store.set('health', health); }
   if (a) { const h = a.shift(); const ix = k => h.indexOf(k);
     acts = a.filter(r => r[ix('date')]).map(r => ({ date: r[ix('date')], start: (r[ix('start_local')] || '').slice(11, 16), name: r[ix('name')], type: r[ix('type')],
-      dur: num(r[ix('duration_min')]), km: num(r[ix('distance_km')]), hr: num(r[ix('avg_hr')]), kcal: num(r[ix('kcal')]), ate: num(r[ix('aerobic_te')]), load: num(r[ix('training_load')]) }))
+      dur: num(r[ix('duration_min')]), km: num(r[ix('distance_km')]), hr: num(r[ix('avg_hr')]), kcal: num(r[ix('kcal')]), ate: num(r[ix('aerobic_te')]), load: num(r[ix('training_load')]),
+      id: r[ix('activity_id')], max: num(r[ix('max_hr')]), ane: num(r[ix('anaerobic_te')]), z: [1, 2, 3, 4, 5].map(i => ix(`hr_z${i}_min`) >= 0 ? num(r[ix(`hr_z${i}_min`)]) : null) }))
       .sort((x, y) => (y.date + y.start).localeCompare(x.date + x.start));
     store.set('acts', acts); }
   if (w) { const h = w.shift(); const iD = h.indexOf('date'), iK = h.indexOf('weight_kg');

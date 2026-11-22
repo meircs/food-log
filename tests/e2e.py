@@ -43,7 +43,23 @@ def fixtures():
     acts = ['activity_id,date,start_local,name,type,duration_min,distance_km,avg_hr,max_hr,kcal,aerobic_te,anaerobic_te,training_load,hr_z1_min,hr_z2_min,hr_z3_min,hr_z4_min,hr_z5_min']
     for n in range(0, 60, 2):
         acts.append(f'{1000 + n},{D(n)},{D(n)} 18:00,Test Run,running,30,5,150,170,300,3.0,1.0,60,1,5,10,10,4')
-    return {'data/food.csv': '\n'.join(food) + '\n', 'data/daily.csv': '\n'.join(daily) + '\n',
+    import json, math
+    T = list(range(0, 1800, 10))
+    run = {'id': 1000, 'name': 'Test Run', 'type': 'running', 'start': f'{D(0)} 18:00', 'duration_s': 1800, 'moving_s': 1700, 'distance_m': 5000,
+           'kcal': 300, 'avg_hr': 150, 'max_hr': 170, 'avg_speed': 2.78, 'elev_gain': 20, 'elev_loss': 20, 'cadence': 160, 'stride_cm': 100, 'gct_ms': 260,
+           'vert_osc_cm': 8.1, 'vert_ratio': 8.2, 'avg_power': 250, 'max_power': 400, 'aerobic_te': 3.0, 'anaerobic_te': 1.0, 'te_label': 'TEMPO',
+           'aerobic_msg': 'IMPACTING_TEMPO_22', 'anaerobic_msg': 'NO_ANAEROBIC_BENEFIT_0', 'load': 60, 'body_battery': -9, 'water_ml': 400,
+           'hr_zones_s': [60, 300, 600, 600, 240], 'power_zones_s': [300, 300, 600, 400, 200], 'fastest_1k_s': 330, 'rpe': 70, 'min_hr': 95,
+           'run_walk': [{'kind': 'run', 'count': 3, 'duration_s': 1500, 'distance_m': 4500}, {'kind': 'walk', 'count': 3, 'duration_s': 300, 'distance_m': 500}],
+           'workout': {'name': 'Base', 'steps': [{'intensity': 'INTERVAL', 'type': 'TIME', 'value': 1800, 'target': 'HEART_RATE', 'low': 137, 'high': 164}]},
+           'km_splits': [{'km': k, 'time_s': 350 + k * 3, 'avg_hr': 145 + k} for k in range(1, 6)],
+           'chart': {'t': T, 'd': [t * 2.78 for t in T], 'hr': [140 + (t // 10) % 25 for t in T], 'spd': [2.6 + 0.3 * math.sin(t / 100) for t in T],
+                     'ele': [150 + 5 * math.sin(t / 300) for t in T], 'cad': [160] * len(T), 'pwr': [250] * len(T), 'bb': [60 - t // 200 for t in T]},
+           'route': [[43.70 + 0.004 * math.cos(i / 10), -79.25 + 0.006 * math.sin(i / 10)] for i in range(63)]}
+    gym = {'id': 1002, 'name': 'Strength', 'type': 'running', 'start': f'{D(2)} 18:00', 'duration_s': 900, 'kcal': 90, 'avg_hr': 130, 'total_sets': 6, 'total_reps': 60,
+           'sets': [{'exercise': 'PUSH_UP', 'sets': 3, 'reps': 35}, {'exercise': 'ROW', 'sets': 3, 'reps': 25, 'max_kg': 5.0}, {'exercise': 'PLANK', 'sets': 3, 'reps': 0, 'duration_s': 155}]}
+    extra = {'data/activities/1000.json': json.dumps(run), 'data/activities/1002.json': json.dumps(gym)}
+    return {**extra, 'data/food.csv': '\n'.join(food) + '\n', 'data/daily.csv': '\n'.join(daily) + '\n',
             'data/weight.csv': '\n'.join(weight) + '\n', 'data/activities.csv': '\n'.join(acts) + '\n'}
 
 
@@ -215,6 +231,21 @@ async def main():
         print('Sync from Garmin button')
         await tab(pg, 'health'); await pg.wait_for_timeout(500); await pg.click('#gsync'); await pg.wait_for_timeout(3500)
         check(getattr(repo, 'dispatches', 0) >= 1, 'Sync button starts the Garmin workflow')
+        if await pg.locator('[data-act]').count():
+            await pg.click('[data-act="0"]'); await pg.wait_for_timeout(400)
+            await pg.wait_for_timeout(1200)
+            sh = pg.locator('.sheet')
+            check(await sh.locator('text=Splits').count() == 1 and await sh.locator('text=Route').count() == 1, 'workout details show route and splits')
+            check(await sh.locator('svg[data-wk]').count() >= 4, 'workout details show charts')
+            box = await sh.locator('svg[data-wk="hr"]').bounding_box()
+            await pg.mouse.move(box['x'] + box['width'] / 2, box['y'] + 40); await pg.mouse.down(); await pg.wait_for_timeout(150)
+            check('bpm' in await sh.locator('#wkl-hr').inner_text(), 'touching a chart shows the value'); await pg.mouse.up()
+            check(await sh.locator('text=of the time in your target').count() == 1, 'planned workout target shown')
+            await pg.click('#xclose'); await pg.wait_for_timeout(400)
+            await pg.click('[data-act="1"]'); await pg.wait_for_timeout(1200)
+            check(await pg.locator('.sheet:has-text("Exercises"):has-text("Push up")').count() == 1, 'strength workout shows exercises')
+            await pg.click('#xclose'); await pg.wait_for_timeout(400)
+        else: print('  (no workouts in mock data, detail test skipped)')
         await tab(pg, 'today'); await pg.wait_for_timeout(300)
 
         print('Edit and delete entries logged via Claude')

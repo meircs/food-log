@@ -122,11 +122,12 @@ function viewHealth() {
   const loads = weeks.map(b => { const v = acts.filter(a => b.days.includes(a.date)).reduce((s2, a) => s2 + a.load, 0); return v || null; });
   html += `<div class="card"><b>Training load</b> <span class="small muted">· per week, from workouts</span>${hBars({ id: 'hload', buckets: weeks, series: [{ name: 'Load', color: 'var(--f)', vals: loads }] })}</div>`;
   const icon = t => ({ running: '🏃', walking: '🚶', cycling: '🚴', strength_training: '🏋', swimming: '🏊', hiking: '🥾' }[t] || '•');
-  if (wk.length) html += `<h2>Workouts · ${wk.length}</h2><div class="list">${wk.slice(0, 20).map(a => `<div class="item"><div style="width:24px;text-align:center">${icon(a.type)}</div><div class="grow">
+  if (wk.length) html += `<h2>Workouts · ${wk.length}</h2><div class="list">${wk.slice(0, 20).map((a, i) => `<div class="item" data-act="${i}" style="cursor:pointer"><div style="width:24px;text-align:center">${icon(a.type)}</div><div class="grow">
       <div class="name">${esc(a.name || a.type)}</div><div class="small muted">${esc(shortDay(a.date, true))} ${esc(a.start)} · ${r0(a.dur)} min${a.km ? ` · ${r1(a.km)} km` : ''}${a.hr ? ` · ${r0(a.hr)} bpm` : ''}${a.ate ? ` · TE ${r1(a.ate)}` : ''}</div></div><div class="kcal">${r0(a.kcal)}</div></div>`).join('')}</div>
       ${wk.length > 20 ? `<div class="small muted" style="margin:6px 4px">Showing the latest 20.</div>` : ''}`;
   html += `<div class="small muted" style="margin:14px 4px">From your Garmin, synced to garmin-health each morning, or any time with the button at the top. Last night = the sleep that ended on ${esc(shortDay(last, true))}.</div>`;
   $('#view').innerHTML = html;
+  $('#view').querySelectorAll('[data-act]').forEach(el => el.onclick = () => actDetail(wk[+el.dataset.act], icon));
   $('#gsync').onclick = async () => { const b = $('#gsync'); b.disabled = true; b.textContent = '↻ Asking Garmin…';
     const ok = await syncGarminNow(t => { const x = $('#gsync'); if (x) x.textContent = '↻ ' + t; });
     if (ok) toast('Garmin data updated ✓'); if (state.tab === 'health') viewHealth(); };
@@ -147,3 +148,4 @@ function viewHealth() {
   wire('hload', weeks, i => loads[i] ? `load ${r0(loads[i])}` : 'no workouts');
   pullGarmin(false);
 }
+
