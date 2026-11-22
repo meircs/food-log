@@ -80,7 +80,8 @@ function viewHealth() {
   const rangeDays = bk.flatMap(b => b.days);
   const avgOf = f => { const v = rangeDays.map(d => health[d] ? f(health[d]) : null).filter(x => x != null); return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null; };
   const wk = acts.filter(a => rangeDays.includes(a.date));
-  let html = `<div class="card">
+  let html = `<button class="btn secondary" id="gsync" ${garminSyncing ? 'disabled' : ''}>${garminSyncing ? '↻ Syncing from Garmin…' : '↻ Sync from Garmin now'}</button>
+    <div class="card">
       <div class="spread"><b>Last night</b><span class="small muted">${esc(shortDay(last, true))}${L0.bed ? ` · ${esc(L0.bed)}–${esc(L0.wake)}` : ''}</span></div>
       <div class="spread" style="margin-top:6px"><div><div class="big">${L0.score ?? '–'}</div><div class="small muted">sleep score</div></div>
         <div style="text-align:right"><div style="font-size:22px;font-weight:650">${hm(L0.hrs)}</div><div class="small muted">deep ${hm(L0.deep)} · REM ${hm(L0.rem)}</div></div></div>
@@ -124,8 +125,11 @@ function viewHealth() {
   if (wk.length) html += `<h2>Workouts · ${wk.length}</h2><div class="list">${wk.slice(0, 20).map(a => `<div class="item"><div style="width:24px;text-align:center">${icon(a.type)}</div><div class="grow">
       <div class="name">${esc(a.name || a.type)}</div><div class="small muted">${esc(shortDay(a.date, true))} ${esc(a.start)} · ${r0(a.dur)} min${a.km ? ` · ${r1(a.km)} km` : ''}${a.hr ? ` · ${r0(a.hr)} bpm` : ''}${a.ate ? ` · TE ${r1(a.ate)}` : ''}</div></div><div class="kcal">${r0(a.kcal)}</div></div>`).join('')}</div>
       ${wk.length > 20 ? `<div class="small muted" style="margin:6px 4px">Showing the latest 20.</div>` : ''}`;
-  html += `<div class="small muted" style="margin:14px 4px">From your Garmin, synced to garmin-health each morning. Last night = the sleep that ended on ${esc(shortDay(last, true))}.</div>`;
+  html += `<div class="small muted" style="margin:14px 4px">From your Garmin, synced to garmin-health each morning, or any time with the button at the top. Last night = the sleep that ended on ${esc(shortDay(last, true))}.</div>`;
   $('#view').innerHTML = html;
+  $('#gsync').onclick = async () => { const b = $('#gsync'); b.disabled = true; b.textContent = '↻ Asking Garmin…';
+    const ok = await syncGarminNow(t => { const x = $('#gsync'); if (x) x.textContent = '↻ ' + t; });
+    if (ok) toast('Garmin data updated ✓'); if (state.tab === 'health') viewHealth(); };
   $('#hr').querySelectorAll('button').forEach(b => { b.classList.toggle('on', +b.dataset.r === r); b.onclick = () => { state.hrange = +b.dataset.r; viewHealth(); }; });
   const wire = (id, bks, fn) => { const svg = $('#' + id); if (!svg) return; svg.querySelectorAll('.hit').forEach(hh => hh.onclick = () => {
     svg.querySelectorAll('.hit').forEach(x => x.setAttribute('fill', 'transparent')); hh.setAttribute('fill', 'rgba(127,127,127,.12)');

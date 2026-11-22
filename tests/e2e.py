@@ -54,6 +54,10 @@ class Repo:
         req = route.request
         if req.headers.get('authorization') != f'Bearer {TOKEN}' and req.method != 'OPTIONS':
             return await route.fulfill(status=401, headers=H, body='{}')
+        if '/actions/' in req.url:
+            if req.method == 'POST': self.dispatches = getattr(self, 'dispatches', 0) + 1; return await route.fulfill(status=204, headers=H, body='')
+            if req.method == 'GET': return await route.fulfill(status=200, content_type='application/json', headers=H, body=json.dumps({'workflow_runs': [{'status': 'completed', 'conclusion': 'success'}]}))
+            return await route.fulfill(status=204, headers={**H, 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*'})
         path = req.url.split('/contents/')[1].split('?')[0]; f = self.files.get(path)
         if req.method == 'GET':
             if not f: return await route.fulfill(status=404, headers=H, body='{}')
@@ -202,6 +206,17 @@ async def main():
         check(after[:len(before)] == before and len(after) == len(before) + 1 and 'app:' in after[-1] and ',69.50,' in after[-1], 'weigh-in appended to weight.csv, other rows untouched')
         check('69.5 kg' in await pg.inner_text('#wlog'), 'Today shows the weigh-in')
 
+        print('Blood pressure')
+        await pg.click('#bplog'); await pg.fill('#s1', '118'); await pg.fill('#d1', '76'); await pg.fill('#p1', '70'); await pg.fill('#s2', '116'); await pg.fill('#d2', '72'); await pg.click('#bpsv'); await pg.wait_for_timeout(2500)
+        bp = repo.files.get('data/bp.csv', {'text': ''})['text'].splitlines()
+        check(len(bp) == 2 and bp[0].startswith('date,time,period,systolic_1') and ',118,76,70,116,72,' in bp[1] and 'app:' in bp[1], 'BP saved to bp.csv with header')
+        check('117/74' in await pg.inner_text('#bplog'), 'Today shows the BP average')
+
+        print('Sync from Garmin button')
+        await tab(pg, 'health'); await pg.wait_for_timeout(500); await pg.click('#gsync'); await pg.wait_for_timeout(3500)
+        check(getattr(repo, 'dispatches', 0) >= 1, 'Sync button starts the Garmin workflow')
+        await tab(pg, 'today'); await pg.wait_for_timeout(300)
+
         print('Edit and delete entries logged via Claude')
         await pg.click('#view .item:has-text("Spaghetti with lean ground lamb and carrots"):has-text("via Claude")'); await pg.click('#redit')
         await pg.click('#rp button[data-p="50"]'); await pg.click('#rsv'); await pg.wait_for_timeout(2500)
@@ -215,9 +230,9 @@ async def main():
         print('AI coach')
         await tab(pg, 'ai')
         check(await pg.locator('#aiset').count() == 1, 'AI tab asks for a key first')
-        await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-bad' + 'x' * 30); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(1500)
+        await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-bad' + 'x' * 30); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(8000)
         check(await pg.locator('.aimain').count() == 0, 'rejected key shows no analysis')
-        await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-' + 'k' * 40); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(2500)
+        await tab(pg, 'more'); await pg.fill('#aik', 'sk-ant-' + 'k' * 40); await pg.click('#aisv'); await tab(pg, 'ai'); await pg.click('#aiup'); await pg.wait_for_timeout(9000)
         check('Protein is your gap' in await pg.inner_text('.aimain') and '1.7¢' in await pg.inner_text('.aimain'), 'Update shows analysis with cost')
         ctxt = CLAUDE_CALLS[-1]['messages'][0]['content']
         check('LAST 14 DAYS' in ctxt and 'GOAL' in ctxt and CLAUDE_CALLS[-1]['model'] == 'claude-sonnet-5-5' and CLAUDE_CALLS[-1]['tools'][0]['name'] == 'coach_report' and CLAUDE_CALLS[-1]['tool_choice']['type'] == 'auto', 'request includes goal, 14 days of data, Sonnet, report tool')

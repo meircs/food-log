@@ -48,7 +48,8 @@ async function aiUpdate() {
   if (!navigator.onLine) { toast("You're offline"); return; }
   aiBusy = true; viewAI();
   try {
-    try { await pullGarmin(true); } catch (e) { }
+    try { await syncGarminNow(t => { const b = $('#aiup'); if (b) b.textContent = '✦ ' + t; }); } catch (e) { }
+    { const b = $('#aiup'); if (b) b.textContent = '✦ Analyzing your data…'; }
     const model = settings.aiModel || 'claude-sonnet-5-5';
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': settings.aiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },

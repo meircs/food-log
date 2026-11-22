@@ -16,11 +16,11 @@ async function sync(manual) {
   if (!settings.ghToken) { if (manual) toast('Add your GitHub token first'); return; }
   if (syncing) return;
   const suppWork = suppLog.some(l => !l.exported) || store.get('suppDeleted', []).length;
-  const wWork = weightLog.some(w => !w.exported) || store.get('wDeleted', []).length;
+  const wWork = weightLog.some(w => !w.exported) || store.get('wDeleted', []).length || bpLog.some(b => !b.exported) || store.get('bpDeleted', []).length;
   const aiWork = store.get('aiDirty', false);
   const work = entries.some(e => !e.exported) || store.get('deleted', []).length || libDirty() || suppWork || wWork || remoteOps.length || aiWork;
   await syncEntries(manual);
-  if (navigator.onLine && (remoteOps.length || wWork)) { syncing = true; try { await syncRemoteOps(); await syncWeights(); } catch (e) { store.set('syncError', e.message); } finally { syncing = false; } }
+  if (navigator.onLine && (remoteOps.length || wWork)) { syncing = true; try { await syncRemoteOps(); await syncWeights(); await syncBP(); } catch (e) { store.set('syncError', e.message); } finally { syncing = false; } }
   if (navigator.onLine && aiWork) { try { await syncAI(); } catch (e) { } }
   if (navigator.onLine && (manual || Date.now() - store.get('remotePulled', 0) > 60000)) { try { await pullAI(); } catch (e) { } try { await pullRemote(); } catch (e) { store.set('syncError', 'could not reach GitHub: ' + e.message); } }
   if (navigator.onLine) { try { await pullGarmin(false); } catch (e) { } }
@@ -85,6 +85,23 @@ async function syncWeights() {
     if (!p.ok) throw new Error('weight: GitHub error ' + p.status);
     const sent = new Set(pending.map(w => w.id)); weightLog.forEach(w => { if (sent.has(w.id)) w.exported = true; }); store.set('weightLog', weightLog);
     store.set('wDeleted', store.get('wDeleted', []).filter(id => !ids.has(id))); return;
+  }
+}
+async function syncBP() {
+  const pending = bpLog.filter(b => !b.exported), deleted = store.get('bpDeleted', []);
+  if (!pending.length && !deleted.length) return;
+  const path = settings.ghPath.replace(/[^/]*$/, '') + 'bp.csv', ids = new Set([...pending.map(b => b.id), ...deleted]);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const g = await gh('GET', null, path); let text = 'date,time,period,systolic_1,diastolic_1,pulse_1,systolic_2,diastolic_2,pulse_2,notes\n', sha;
+    if (g.ok) { const f = await g.json(); text = b64ToText(f.content || ''); sha = f.sha; } else if (g.status !== 404) throw new Error('BP: GitHub error ' + g.status);
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.length);
+    const kept = lines.filter((l, i) => { if (!i) return true; const m = l.match(/app:([a-z0-9]+)/); return !(m && ids.has(m[1])); });
+    const added = pending.map(b => [b.date, b.time, b.period, b.s1, b.d1, b.p1 ?? '', b.s2 ?? '', b.d2 ?? '', b.p2 ?? '', 'logged in food app app:' + b.id].map(csvCell).join(','));
+    const p = await gh('PUT', { message: `BP from food app${pending.length ? ' ' + pending.map(b => b.date + ' ' + b.period).join(', ') : ''}`, content: textToB64([...kept, ...added].join('\n') + '\n'), ...(sha ? { sha } : {}) }, path);
+    if (p.status === 409 || p.status === 422) continue;
+    if (!p.ok) throw new Error('BP: GitHub error ' + p.status);
+    const sent = new Set(pending.map(b => b.id)); bpLog.forEach(b => { if (sent.has(b.id)) b.exported = true; }); store.set('bpLog', bpLog);
+    store.set('bpDeleted', store.get('bpDeleted', []).filter(id => !ids.has(id))); return;
   }
 }
 // Apply edits/deletes of rows Claude logged: change only the matching line, leave every other line as it is.

@@ -56,6 +56,7 @@ let supps = store.get('supps', []);       // [{id, name, dose}]
 let suppLog = store.get('suppLog', []);   // [{id, date, time, suppId, name, dose, exported}]
 const saveSupps = () => { store.set('supps', supps); bumpLib(); scheduleSync(); };
 const saveSuppLog = () => { store.set('suppLog', suppLog); scheduleSync(); };
+let bpLog = store.get('bpLog', []); // in-app BP [{id,date,time,period,s1,d1,p1,s2,d2,p2,exported}]
 let weightLog = store.get('weightLog', []); // in-app weigh-ins [{id,date,time,kg,bf,exported}]
 let remoteOps = store.get('remoteOps', []); // pending edits/deletes of rows Claude logged
 let remote = store.get('remote', []); // rows Claude logged in food.csv (read-only here)

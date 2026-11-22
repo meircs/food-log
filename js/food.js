@@ -20,7 +20,7 @@ function viewToday() {
     ${burnLine(t.kcal)}
     <div class="small muted" id="syncline" style="margin:-4px 4px 8px">${esc(syncStatus())}</div>
     ${suppCard()}
-    <div class="mealadd">${['breakfast', 'lunch', 'dinner', 'snack'].map(m => `<button class="chip" data-addm="${m}">＋ ${cap(m)}</button>`).join('')}<button class="chip" id="wlog">${weightChip()}</button></div>`;
+    <div class="mealadd">${['breakfast', 'lunch', 'dinner', 'snack'].map(m => `<button class="chip" data-addm="${m}">＋ ${cap(m)}</button>`).join('')}<button class="chip" id="wlog">${weightChip()}</button><button class="chip" id="bplog">${bpChip()}</button></div>`;
   if (!day.length) html += `<div class="list"><div class="empty">Nothing logged yet.<br><button class="btn" id="goadd" style="max-width:220px;margin:12px auto 0">Add food</button></div></div>`;
   for (const m of MEALS) {
     const items = day.filter(e => e.meal === m); if (!items.length) continue;
@@ -36,6 +36,7 @@ function viewToday() {
   $('#view').querySelectorAll('.item').forEach(b => b.onclick = () => { const e = day.find(x => x.id === b.dataset.id); e.remote ? showRemote(e) : editEntry(e); });
   $('#view').querySelectorAll('[data-addm]').forEach(b => b.onclick = () => { state.tab = 'add'; render(); state.addMeal = b.dataset.addm; renderHeader(); window.scrollTo(0, 0); });
   const wl = $('#wlog'); if (wl) wl.onclick = () => logWeight();
+  const bl = $('#bplog'); if (bl) bl.onclick = () => logBP();
   $('#view').querySelectorAll('[data-save]').forEach(b => b.onclick = () => saveAsMeal(day.filter(e => e.meal === b.dataset.save), b.dataset.save));
 }
 
@@ -74,6 +75,48 @@ function logWeight() {
       weights = weights.filter(x => x.date !== state.date); store.set('weights', weights); scheduleSync(); closeSheet(); render(); toast('Deleted');
     };
   });
+}
+function bpChip() {
+  const t = bpLog.filter(x => x.date === state.date);
+  if (!t.length) return '❤ BP';
+  const l = t[t.length - 1]; const a = bpAvg(l);
+  return `❤ ${a.s}/${a.d}${t.length > 1 ? ` ×${t.length}` : ''}`;
+}
+function bpAvg(x) { const S = [x.s1, x.s2].filter(Boolean), D = [x.d1, x.d2].filter(Boolean); return { s: Math.round(S.reduce((a, c) => a + c, 0) / S.length), d: Math.round(D.reduce((a, c) => a + c, 0) / D.length) }; }
+function logBP() {
+  const nowP = state.date === todayStr() && +nowTime().slice(0, 2) >= 15 ? 'evening' : 'morning';
+  const pick = per => bpLog.find(x => x.date === state.date && x.period === per);
+  const form = per => { const ex = pick(per);
+    openSheet(`<h3>Blood pressure · ${esc(dateLabel(state.date))}</h3>
+      <div class="small muted">Sit 5 min, back supported, feet flat, cuff on bare upper arm at heart level, no talking. Take 2 readings 1 min apart.</div>
+      <div class="seg" id="bpp" style="margin-top:8px"><button data-p="morning">Morning</button><button data-p="evening">Evening</button></div>
+      <label>Reading 1 (sys / dia / pulse)</label>
+      <div class="grid2" style="grid-template-columns:1fr 1fr 1fr"><input type="text" inputmode="numeric" id="s1" placeholder="120" value="${ex ? ex.s1 : ''}"><input type="text" inputmode="numeric" id="d1" placeholder="80" value="${ex ? ex.d1 : ''}"><input type="text" inputmode="numeric" id="p1" placeholder="pulse" value="${ex && ex.p1 ? ex.p1 : ''}"></div>
+      <label>Reading 2 (optional)</label>
+      <div class="grid2" style="grid-template-columns:1fr 1fr 1fr"><input type="text" inputmode="numeric" id="s2" placeholder="118" value="${ex && ex.s2 ? ex.s2 : ''}"><input type="text" inputmode="numeric" id="d2" placeholder="78" value="${ex && ex.d2 ? ex.d2 : ''}"><input type="text" inputmode="numeric" id="p2" placeholder="pulse" value="${ex && ex.p2 ? ex.p2 : ''}"></div>
+      <label>Time</label><input type="time" id="bpt" value="${ex ? ex.time : state.date === todayStr() ? nowTime() : (per === 'evening' ? '20:00' : '08:00')}">
+      <button class="btn" id="bpsv">Save</button>${ex ? '<button class="btn danger" id="bpdel">Delete this reading</button>' : ''}`, s => {
+      $('#bpp', s).querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.p === per); b.onclick = () => { if (b.dataset.p !== per) { closeSheet(); form(b.dataset.p); } }; });
+      $('#bpsv', s).onclick = () => {
+        const v = k => Math.round(num($('#' + k, s).value)) || null;
+        const r = { s1: v('s1'), d1: v('d1'), p1: v('p1'), s2: v('s2'), d2: v('d2'), p2: v('p2') };
+        const okP = (sy, di) => sy >= 60 && sy <= 260 && di >= 30 && di <= 160 && sy > di;
+        if (!okP(r.s1, r.d1)) return toast('Enter reading 1 as top / bottom number, e.g. 120 / 80');
+        if ((r.s2 || r.d2) && !okP(r.s2, r.d2)) return toast('Check reading 2, or leave it empty');
+        const time = $('#bpt', s).value || nowTime();
+        if (ex) Object.assign(ex, r, { time, exported: false });
+        else bpLog.push({ id: uid(), date: state.date, time, period: per, ...r, exported: false });
+        store.set('bpLog', bpLog); scheduleSync(); closeSheet(); render();
+        const hi = [[r.s1, r.d1], [r.s2, r.d2]].some(([sy, di]) => sy >= 180 || di >= 110);
+        const a = bpAvg(r);
+        toast(hi ? 'Very high reading. Rest 5 min and measure again. If it stays this high, contact a doctor or call 811 (911 with chest pain, breathlessness, weakness or vision problems).' : `Saved ${a.s}/${a.d}`);
+      };
+      const d = $('#bpdel', s); if (d) d.onclick = () => {
+        if (ex.exported) { const dl = store.get('bpDeleted', []); dl.push(ex.id); store.set('bpDeleted', dl); }
+        bpLog = bpLog.filter(x => x !== ex); store.set('bpLog', bpLog); scheduleSync(); closeSheet(); render(); toast('Deleted');
+      };
+    }); };
+  form(nowP);
 }
 function editRemote(e) {
   openSheet(`<h3>Edit: ${esc(e.name)}</h3><div class="small muted">Changes go into your food log on the next sync.</div>
@@ -517,35 +560,40 @@ function stopScanner() {
 }
 function scanBarcode() {
   openSheet(`<h3>Scan barcode</h3>
-    <div id="reader" style="width:100%;min-height:220px;border-radius:12px;overflow:hidden;background:#000;margin-top:8px"></div>
-    <div class="small muted" id="sst" style="margin-top:6px">Starting camera…</div>
-    <button class="btn secondary" id="ph">Take a photo of the barcode instead</button>
+    <button class="btn" id="ph">📷 Take a photo of the barcode</button>
+    <div class="small muted" style="margin-top:4px">Opens the iPhone camera. No permission pop-up.</div>
     <input type="file" accept="image/*" capture="environment" id="phf" hidden>
+    <div id="reader" style="width:100%;min-height:0;border-radius:12px;overflow:hidden;background:#000;margin-top:8px"></div>
+    <div class="small muted" id="sst" style="margin-top:6px"></div>
+    <button class="btn secondary" id="lv">Use live scanner instead</button>
     <label>Or type the number under the barcode</label>
     <div class="row"><input type="text" inputmode="numeric" id="bc" placeholder="e.g. 0055577120101"><button class="btn" id="bcgo" style="width:auto;margin:0;padding:11px 18px">Go</button></div>`, async s => {
     let fired = false;
     const done = async code => { if (fired) return; fired = true; await stopScanner(); closeSheet(); handleBarcode(String(code)); };
     $('#bcgo', s).onclick = () => { const c = $('#bc', s).value.replace(/\D/g, ''); if (c.length < 6) return toast('Enter the barcode digits'); done(c); };
-    try { await loadScanLib(); } catch (e) { $('#sst', s).textContent = 'Scanner not loaded. Type the number instead.'; return; }
-    if (!document.getElementById('reader')) return; // sheet closed while loading
-    const F = Html5QrcodeSupportedFormats;
-    const cfg = { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E], verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } };
+    let F, cfg;
+    const ready = async () => { if (F) return true; try { await loadScanLib(); } catch (e) { $('#sst', s).textContent = 'Scanner not loaded. Type the number instead.'; return false; }
+      F = Html5QrcodeSupportedFormats; cfg = { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E], verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }; return true; };
     $('#ph', s).onclick = () => $('#phf', s).click();
     $('#phf', s).onchange = async ev => {
       const file = ev.target.files[0]; if (!file) return;
-      await stopScanner();
+      await stopScanner(); $('#sst', s).textContent = 'Reading the barcode…';
+      if (!(await ready())) return;
       try { const h = new Html5Qrcode('reader', cfg); const code = await h.scanFile(file, false); try { h.clear(); } catch (e) { } done(code); }
-      catch (e) { $('#sst', s).textContent = 'No barcode found in that photo. Try closer, or type the number.'; }
+      catch (e) { $('#sst', s).textContent = 'No barcode found in that photo. Fill the frame with the barcode, hold steady, or type the number.'; }
     };
-    try {
-      scanner = new Html5Qrcode('reader', cfg);
-      await scanner.start({ facingMode: 'environment' },
-        { fps: 10, qrbox: (w, h) => ({ width: Math.floor(w * 0.85), height: Math.floor(Math.min(w, h) * 0.45) }) },
-        code => done(code), () => { });
-      $('#sst', s).textContent = 'Point the camera at the barcode.';
-    } catch (e) {
-      $('#sst', s).textContent = 'Camera not available. Allow camera access in Settings, or use a photo / type the number.';
-    }
+    const startLive = async () => {
+      if (!(await ready()) || !document.getElementById('reader')) return;
+      $('#reader', s).style.minHeight = '220px'; $('#sst', s).textContent = 'Starting camera…';
+      try {
+        scanner = new Html5Qrcode('reader', cfg);
+        await scanner.start({ facingMode: 'environment' },
+          { fps: 10, qrbox: (w, h) => ({ width: Math.floor(w * 0.85), height: Math.floor(Math.min(w, h) * 0.45) }) },
+          code => done(code), () => { });
+        $('#sst', s).textContent = 'Point the camera at the barcode.';
+      } catch (e) { $('#reader', s).style.minHeight = '0'; $('#sst', s).textContent = 'Camera not available. Use the photo button or type the number.'; }
+    };
+    $('#lv', s).onclick = startLive;
   });
 }
 const normCode = c => String(c).replace(/\D/g, '').replace(/^0+/, '');

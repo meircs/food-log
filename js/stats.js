@@ -35,6 +35,42 @@ async function pullGarmin(force) {
   if (state.tab === 'health') viewHealth();
   if (state.tab === 'today' && !$('#bd')) render();
 }
+// Ask GitHub to run the Garmin sync now, wait for it, then reload the data.
+let garminSyncing = false;
+async function syncGarminNow(onStatus) {
+  if (!settings.ghToken || !navigator.onLine || garminSyncing) return false;
+  if (Date.now() - store.get('garminSynced', 0) < 3 * 60000) { await pullGarmin(true); return true; }
+  garminSyncing = true;
+  const say = t => { try { onStatus && onStatus(t); } catch (e) { } };
+  try {
+    const api = `https://api.github.com/repos/${settings.ghRepo}/actions/workflows/daily.yml`;
+    const H = { Authorization: `Bearer ${settings.ghToken}`, Accept: 'application/vnd.github+json' };
+    const since = new Date(Date.now() - 10000).toISOString();
+    say('Asking Garmin for new data…');
+    const d = await fetch(api + '/dispatches', { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: 'main', inputs: { days_back: '2' } }) });
+    if (d.status === 403 || d.status === 404) throw new Error('perm');
+    if (!d.ok) throw new Error('GitHub error ' + d.status);
+    let ok = false;
+    for (let i = 0; i < 40 && !ok; i++) {
+      await new Promise(r => setTimeout(r, 4000));
+      const r = await fetch(`${api}/runs?event=workflow_dispatch&per_page=1&created=${encodeURIComponent('>=' + since)}`, { headers: H, cache: 'no-store' });
+      if (!r.ok) continue;
+      const run = ((await r.json()).workflow_runs || [])[0];
+      if (!run) { say('Starting Garmin sync…'); continue; }
+      if (run.status !== 'completed') { say('Syncing from Garmin…'); continue; }
+      if (run.conclusion !== 'success') throw new Error('The Garmin sync failed on GitHub. Check the repo’s Actions tab.');
+      ok = true;
+    }
+    if (!ok) throw new Error('Garmin sync is taking long. Try again in a minute.');
+    store.set('garminSynced', Date.now());
+    await pullGarmin(true);
+    return true;
+  } catch (e) {
+    toast(e.message === 'perm' ? 'Your GitHub token needs “Actions: Read and write” on garmin-health to sync on demand.' : e.message === 'Failed to fetch' ? 'Could not reach GitHub.' : e.message);
+    try { await pullGarmin(true); } catch (e2) { }
+    return false;
+  } finally { garminSyncing = false; }
+}
 function mondayOf(d) { const [y, m, dd] = d.split('-').map(Number); const dow = new Date(y, m - 1, dd).getDay(); return addDays(d, -((dow + 6) % 7)); }
 const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 // Energy model: maintenance from Garmin burn, refined by intake vs weight trend once there's enough data.
