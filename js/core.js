@@ -115,16 +115,14 @@ function totals(list) {
 // ---------- sheet ----------
 // The page behind is frozen while a sheet is open (iOS otherwise scrolls it),
 // and the sheet can be dragged down to close, like iOS sheets.
-let sheetLockY = null;
+let sheetLocked = false;
 function lockPage() {
-  if (sheetLockY !== null) return;
-  sheetLockY = window.scrollY;
-  Object.assign(document.body.style, { position: 'fixed', top: `-${sheetLockY}px`, left: '0', right: '0' });
+  if (sheetLocked) return; sheetLocked = true;
+  document.documentElement.classList.add('locked');   // overflow hidden: page stays exactly where it is
 }
 function unlockPage() {
-  if (sheetLockY === null) return;
-  Object.assign(document.body.style, { position: '', top: '', left: '', right: '' });
-  window.scrollTo(0, sheetLockY); sheetLockY = null;
+  if (!sheetLocked) return; sheetLocked = false;
+  document.documentElement.classList.remove('locked');
 }
 function openSheet(html, mount) {
   closeSheet(false);

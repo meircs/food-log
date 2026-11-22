@@ -128,6 +128,7 @@ function viewHealth() {
   html += `<div class="small muted" style="margin:14px 4px">From your Garmin, synced to garmin-health each morning, or any time with the button at the top. Last night = the sleep that ended on ${esc(shortDay(last, true))}.</div>`;
   $('#view').innerHTML = html;
   $('#view').querySelectorAll('[data-act]').forEach(el => el.onclick = () => actDetail(wk[+el.dataset.act], icon));
+  wkPrefetch(wk);
   $('#gsync').onclick = async () => { const b = $('#gsync'); b.disabled = true; b.textContent = '↻ Asking Garmin…';
     const ok = await syncGarminNow(t => { const x = $('#gsync'); if (x) x.textContent = '↻ ' + t; });
     if (ok) toast('Garmin data updated ✓'); if (state.tab === 'health') viewHealth(); };

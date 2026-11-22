@@ -243,14 +243,14 @@ async def main():
             check(await sh.locator('text=of the time in your target').count() == 1, 'planned workout target shown')
             await pg.click('#xclose'); await pg.wait_for_timeout(400)
             await pg.click('[data-act="0"]'); await pg.wait_for_timeout(1200)
-            check(await pg.evaluate("document.body.style.position") == 'fixed', 'page behind the sheet is frozen')
+            check(await pg.evaluate("document.documentElement.classList.contains('locked')"), 'page behind the sheet is frozen')
             await pg.evaluate('''() => { const sh = document.querySelector('.sheet'); sh.scrollTop = 0;
               const T = y => [new Touch({identifier: 1, target: sh, clientX: 200, clientY: y})];
               sh.dispatchEvent(new TouchEvent('touchstart', {touches: T(300), changedTouches: T(300), bubbles: true, cancelable: true}));
               for (let y = 310; y <= 520; y += 30) sh.dispatchEvent(new TouchEvent('touchmove', {touches: T(y), changedTouches: T(y), bubbles: true, cancelable: true}));
               sh.dispatchEvent(new TouchEvent('touchend', {touches: [], changedTouches: T(520), bubbles: true, cancelable: true})); }''')
             await pg.wait_for_timeout(600)
-            check(await pg.locator('#bd').count() == 0 and await pg.evaluate("document.body.style.position") == '', 'dragging the sheet down closes it')
+            check(await pg.locator('#bd').count() == 0 and not await pg.evaluate("document.documentElement.classList.contains('locked')"), 'dragging the sheet down closes it')
             await pg.click('[data-act="1"]'); await pg.wait_for_timeout(1200)
             check(await pg.locator('.sheet:has-text("Exercises"):has-text("Push up")').count() == 1, 'strength workout shows exercises')
             await pg.click('#xclose'); await pg.wait_for_timeout(400)

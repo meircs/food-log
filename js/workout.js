@@ -44,13 +44,20 @@ async function wkLoad(id) {
 
 function actDetail(a) {
   if (!a) return;
-  openSheet(`<div id="wkbody">${wkHtml(wkFromCsv(a), true)}</div>`, async sh => {
+  // Open with everything we already have, so the sheet slides up once at full height
+  // and nothing re-draws mid-animation. Fresh data is fetched after the slide finishes.
+  const cached = a.id ? (store.get('actd', {})[a.id] || {}).d : null;
+  openSheet(`<div id="wkbody" style="min-height:78vh">${cached ? wkHtml(cached, false) : wkHtml(wkFromCsv(a), true)}</div>`, sh => {
     wkWire(sh);
     if (!a.id) return;
-    const d = await wkLoad(a.id);
-    const body = sh.querySelector('#wkbody'); if (!body || !document.body.contains(body)) return;
-    body.innerHTML = d ? wkHtml(d, false) : wkHtml(wkFromCsv(a), false, true);
-    wkWire(sh);
+    setTimeout(async () => {
+      const d = await wkLoad(a.id);
+      const body = sh.querySelector('#wkbody'); if (!body || !document.body.contains(body)) return;
+      if (cached && d && JSON.stringify(d) === JSON.stringify(cached)) return;  // nothing new: leave it alone
+      const top = sh.scrollTop;
+      body.innerHTML = d ? wkHtml(d, false) : wkHtml(wkFromCsv(a), false, true);
+      sh.scrollTop = top; wkWire(sh);
+    }, 380);
   });
 }
 
@@ -249,8 +256,14 @@ function wkRoute(r) {
     const sp = r.map(p => p[2] > 0.3 ? p[2] : null), sm = wkSmooth(sp, 2);
     const vals = sm.filter(v => v != null).sort((a, b) => a - b), lo = vals[Math.floor(vals.length * 0.05)], hi = vals[Math.floor(vals.length * 0.95)];
     const col = v => v == null ? PACE_COLS[0] : PACE_COLS[Math.max(0, Math.min(6, Math.round((v - lo) / Math.max(0.01, hi - lo) * 6)))];
-    for (let i = 1; i < r.length; i++)
-      lines += `<path d="M${P(r[i - 1]).join(',')}L${P(r[i]).join(',')}" stroke="${col(sm[i])}" stroke-width="${4.5 * u}" stroke-linecap="round" fill="none"/>`;
+    let cur = null, seg = '';
+    const flush = () => { if (seg) lines += `<path d="${seg}" stroke="${cur}" stroke-width="${4.5 * u}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`; };
+    for (let i = 1; i < r.length; i++) {
+      const c = col(sm[i]);
+      if (c !== cur) { flush(); cur = c; seg = `M${P(r[i - 1]).join(',')}`; }
+      seg += `L${P(r[i]).join(',')}`;
+    }
+    flush();
   } else lines += `<path d="${whole}" fill="none" stroke="#2b6cf0" stroke-width="${4.5 * u}" stroke-linejoin="round" stroke-linecap="round"/>`;
   const [sx, sy] = P(r[0]), [ex, ey] = P(r[r.length - 1]);
   const km = wkPathKm(r);
@@ -284,4 +297,14 @@ function wkWire(root) {
     svg.onpointerdown = e => { move(e); svg.onpointermove = move; };
     svg.onpointerup = svg.onpointerleave = svg.onpointercancel = () => { svg.onpointermove = null; cur.setAttribute('x1', -10); cur.setAttribute('x2', -10); lab.textContent = base; };
   });
+}
+
+// Quietly fetch the newest workouts' details while the Health tab is open, so they open instantly.
+let wkPrefetched = 0;
+function wkPrefetch(list) {
+  if (!settings.ghToken || !navigator.onLine || Date.now() - wkPrefetched < 5 * 60000) return;
+  wkPrefetched = Date.now();
+  const cache = store.get('actd', {});
+  const todo = list.slice(0, 6).filter(a => a.id && !cache[a.id]);
+  todo.forEach((a, i) => setTimeout(() => wkLoad(a.id), 800 + i * 400));
 }

@@ -27,6 +27,7 @@
   --sd:#3c5fb8;--sr:#c070b0;--sl:#628ee0;--sa:#b08830;
 }}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html.locked,html.locked body{overflow:hidden}
 html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%}
 body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 input,textarea,select{-webkit-user-select:text;user-select:text}
@@ -37,7 +38,7 @@ button:active,.item:active,.chip:active{opacity:.6;transition:opacity .05s}
 @keyframes fade{from{opacity:.4}to{opacity:1}}
 #ptr{position:fixed;left:50%;top:calc(var(--safe-t) + 8px);z-index:7;transform:translate(-50%,-60px);background:var(--card);border:1px solid var(--line);
   border-radius:20px;padding:6px 14px;font-size:13px;color:var(--muted);box-shadow:0 2px 8px rgba(0,0,0,.12);transition:transform .15s}
-.sheet{transition:transform .32s cubic-bezier(.2,.9,.25,1);will-change:transform}
+.sheet{transition:transform .32s cubic-bezier(.2,.9,.25,1);will-change:transform;contain:layout paint}
 .backdrop{transition:background .25s ease}.backdrop.closing{background:rgba(0,0,0,0)}
 #view{will-change:transform}
 html,body{margin:0;background:var(--bg);color:var(--ink);
@@ -119,6 +120,7 @@ nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px)}
 @media (prefers-color-scheme:dark){.wkmap{background:#2a2a28}.wktiles img{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.85) saturate(.6)}}
 .wkattr{position:absolute;right:6px;bottom:4px;font-size:9px;color:#444;background:rgba(255,255,255,.8);padding:1px 5px;border-radius:5px}
 .wkgrad{display:inline-block;width:64px;height:6px;border-radius:3px;margin:0 4px;vertical-align:1px;background:linear-gradient(90deg,#1f4fbf,#2f7fe0,#4aa8f0,#79c43c,#f4c430,#f28c28,#e0452c)}
+.item[data-act]{-webkit-tap-highlight-color:transparent;transition:background .15s}.item[data-act]:active{background:var(--line)}
 .wkc{margin-top:12px}.wkax{display:flex;justify-content:space-between;margin-top:1px}
 @keyframes up{from{transform:translateY(100%)}to{transform:none}}
 @keyframes bdin{from{background:rgba(0,0,0,0)}to{background:rgba(0,0,0,.35)}}
