@@ -53,7 +53,7 @@ async function pullGarmin(force) {
 let garminSyncing = false;
 async function syncGarminNow(onStatus) {
   if (!settings.ghToken || !navigator.onLine || garminSyncing) return false;
-  if (Date.now() - store.get('garminSynced', 0) < 3 * 60000) { await pullGarmin(true); return true; }
+  if (Date.now() - store.get('garminSynced', 0) < 30000) { await pullGarmin(true); return true; }   // only skip a double-tap; a later tap always asks Garmin again
   garminSyncing = true;
   const say = t => { try { onStatus && onStatus(t); } catch (e) { } };
   try {
