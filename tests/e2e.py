@@ -296,6 +296,8 @@ async def main():
         check(await pg.locator('.plan:has-text("Green day"):has-text("protein is the gap")').count() == 1, "today's plan card")
         await pg.click('[data-pi="1"]'); await pg.wait_for_timeout(200)
         check(await pg.locator('[data-pi="1"].done').count() == 1, 'plan item can be ticked')
+        await pg.click('#plandet summary'); await pg.wait_for_timeout(200); await pg.evaluate('render()'); await pg.wait_for_timeout(300)
+        check(await pg.evaluate("document.querySelector('#plandet').open"), 'Today in detail stays open when the page refreshes')
         await tab(pg, 'today'); await pg.wait_for_timeout(300)
 
         print('Edit and delete entries logged via Claude')

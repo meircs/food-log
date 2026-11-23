@@ -64,9 +64,11 @@ function planCardHTML() {
     <div class="spread"><span class="small" style="font-weight:650;color:${col}">${lvl ? cap(lvl.toLowerCase()) + ' day' : "Today's plan"}</span><button class="linkbtn small" id="planai">Full analysis ›</button></div>
     <div style="font-weight:650;margin-top:4px;line-height:1.35">${esc((x => x.charAt(0).toUpperCase() + x.slice(1))(head.replace(/^(Green|Yellow|Red)\s*[:—-]\s*/i, '')))}</div>
     ${(d.next || []).length ? `<div class="plannext">${d.next.map((x, i) => `<button class="planitem ${done.includes(i) ? 'done' : ''}" data-pi="${i}"><span class="pbox">${done.includes(i) ? '✓' : ''}</span><span>${esc(x)}</span></button>`).join('')}</div>` : ''}
-    ${todayPart ? `<details style="margin-top:6px"><summary class="linkbtn small" style="cursor:pointer">Today in detail</summary><div style="margin-top:4px;line-height:1.45;font-size:15px">${typeof miniMd === 'function' ? miniMd(todayPart.replace(/^##\s*Today\s*/i, '')) : esc(todayPart)}</div></details>` : ''}</div>`;
+    ${todayPart ? `<details id="plandet" style="margin-top:6px" ${state.planOpen === todayStr() ? 'open' : ''}><summary class="linkbtn small" style="cursor:pointer">Today in detail</summary><div style="margin-top:4px;line-height:1.45;font-size:15px">${typeof miniMd === 'function' ? miniMd(todayPart.replace(/^##\s*Today\s*/i, '')) : esc(todayPart)}</div></details>` : ''}</div>`;
 }
 function wirePlanCard() {
+  // Remember that "Today in detail" is open, so background refreshes (sync, new data) don't fold it shut.
+  const pd = $('#plandet'); if (pd) pd.ontoggle = () => { state.planOpen = pd.open ? todayStr() : null; };
   const a = $('#planai'); if (a) a.onclick = () => { state.tab = 'ai'; render(); window.scrollTo(0, 0); };
   document.querySelectorAll('[data-pi]').forEach(b => b.onclick = () => {
     const all = store.get('planDone', {}), t = todayStr(), i = +b.dataset.pi, cur = new Set(all[t] || []);
