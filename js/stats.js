@@ -11,7 +11,8 @@ async function pullGarmin(force) {
   if (!settings.ghToken || !navigator.onLine) return;
   if (!force && Date.now() - store.get('garminPulled', 0) < 10 * 60000) return;
   const dir = settings.ghPath.replace(/[^/]*$/, '');
-  const read = async f => { const g = await gh('GET', null, dir + f); return g.ok ? parseCSV(b64ToText((await g.json()).content || '')) : null; };
+  const ref = await ghHead();
+  const read = async f => { const g = await gh('GET', null, dir + f, ref); return g.ok ? parseCSV(b64ToText((await g.json()).content || '')) : null; };
   const [d, w, a, bp, ss] = await Promise.all([read('daily.csv'), read('weight.csv'), read('activities.csv'), read('bp.csv'), read('strength_sets.csv')]);
   if (d) { const h = d.shift(); const iD = h.indexOf('date'), iT = h.indexOf('total_kcal'), iA = h.indexOf('active_kcal');
     garmin = {}; d.forEach(r => { if (r[iD] && r[iT]) garmin[r[iD]] = { total: num(r[iT]), active: num(r[iA]) }; }); store.set('garmin', garmin);

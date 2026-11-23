@@ -1,5 +1,5 @@
 // Offline cache for the Food log app. Bump CACHE when files change.
-const CACHE = 'food-log-v44';
+const CACHE = 'food-log-v45';
 const TILES = 'map-tiles-v2'; // route map tiles, kept across app updates
 const ASSETS = ['./', './index.html', './js/core.js', './js/sync.js', './js/food.js', './js/stats.js', './js/health.js', './js/workout.js', './js/progress.js', './js/more.js', './js/ai.js', './js/main.js', './manifest.json', './icon-180.png', './icon-512.png', './vendor/html5-qrcode.min.js'];
 self.addEventListener('install', e => {

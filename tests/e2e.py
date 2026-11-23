@@ -81,6 +81,8 @@ class Repo:
         req = route.request
         if req.headers.get('authorization') != f'Bearer {TOKEN}' and req.method != 'OPTIONS':
             return await route.fulfill(status=401, headers=H, body='{}')
+        if '/commits/main' in req.url:
+            return await route.fulfill(status=200, content_type='text/plain', body='a' * 40)
         if '/actions/' in req.url:
             if req.method == 'POST': self.dispatches = getattr(self, 'dispatches', 0) + 1; return await route.fulfill(status=204, headers=H, body='')
             if req.method == 'GET': return await route.fulfill(status=200, content_type='application/json', headers=H, body=json.dumps({'workflow_runs': [{'status': 'completed', 'conclusion': 'success'}]}))

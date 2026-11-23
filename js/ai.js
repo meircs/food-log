@@ -239,7 +239,7 @@ async function syncAI() {
   }
 }
 async function pullAI() {
-  const g = await gh('GET', null, settings.ghPath.replace(/[^/]*$/, '') + 'ai_history.json'); if (!g.ok) return;
+  const g = await gh('GET', null, settings.ghPath.replace(/[^/]*$/, '') + 'ai_history.json', await ghHead()); if (!g.ok) return;
   try { const remoteH = JSON.parse(b64ToText((await g.json()).content || '')).history || [];
     const byAt = new Map([...aiHistory, ...remoteH].map(h => [h.at, h]));
     aiHistory = [...byAt.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30); store.set('aiHistory', aiHistory);

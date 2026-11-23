@@ -188,8 +188,14 @@ function syncStatus() {
 }
 function b64ToText(b) { const bin = atob(b.replace(/\s/g, '')); return new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))); }
 function textToB64(t) { const by = new TextEncoder().encode(t); let bin = ''; for (let i = 0; i < by.length; i += 0x8000) bin += String.fromCharCode.apply(null, by.subarray(i, i + 0x8000)); return btoa(bin); }
-async function gh(method, body, path = settings.ghPath) {
-  const url = `https://api.github.com/repos/${settings.ghRepo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+// Newest commit on main. Reading files at that exact commit avoids GitHub briefly serving the
+// previous version right after the Garmin sync pushes (which made new steps show up only on a 2nd tap).
+async function ghHead() {
+  try { const r = await fetch(`https://api.github.com/repos/${settings.ghRepo}/commits/main`, { cache: 'no-store', headers: { Authorization: `Bearer ${settings.ghToken}`, Accept: 'application/vnd.github.sha' } });
+    const t = r.ok ? (await r.text()).trim() : ''; return /^[0-9a-f]{40}$/.test(t) ? t : null; } catch (e) { return null; }
+}
+async function gh(method, body, path = settings.ghPath, ref) {
+  const url = `https://api.github.com/repos/${settings.ghRepo}/contents/${path.split('/').map(encodeURIComponent).join('/')}${ref ? `?ref=${ref}` : ''}`;
   return fetch(url, { method, cache: 'no-store', headers: { Authorization: `Bearer ${settings.ghToken}`, Accept: 'application/vnd.github+json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
 }
 async function syncEntries(manual) {
