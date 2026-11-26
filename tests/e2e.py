@@ -143,7 +143,12 @@ async def device(browser, repo, url, scheme='light', token=True):
     return ctx, pg
 
 
-async def tab(pg, name): await pg.click(f'#tabs button[data-t={name}]'); await pg.wait_for_timeout(250)
+async def tab(pg, name):
+    if name == 'add':   # Add is the floating + button on the Food tab now
+        if await pg.locator('#fab').is_hidden(): await pg.click('#tabs button[data-t=today]'); await pg.wait_for_timeout(150)
+        await pg.click('#fab')
+    else: await pg.click(f'#tabs button[data-t={name}]')
+    await pg.wait_for_timeout(250)
 
 
 async def add_food(pg, query, qty=None, serving=False, pct=None, meal=None):
@@ -244,6 +249,13 @@ async def main():
         print('Sync from Garmin button')
         await tab(pg, 'health'); await pg.wait_for_timeout(500); await pg.click('#gsync'); await pg.wait_for_timeout(3500)
         check(getattr(repo, 'dispatches', 0) >= 1, 'Sync button starts the Garmin workflow')
+        await tab(pg, 'home'); await pg.wait_for_timeout(500)
+        check(await pg.locator('.hr1').count() == 3 and len(await pg.inner_text('.hcoach')) > 20, 'Home shows Strain, Recovery, Sleep and coaching')
+        await pg.click('.hr1[data-sc="recovery"]'); await pg.wait_for_timeout(400)
+        check(await pg.locator('.sheet:has-text("Recovery")').count() == 1, 'tapping a score explains it')
+        await pg.click('#xclose'); await pg.wait_for_timeout(400)
+        check(await pg.locator('#hstress').count() == 1 and await pg.locator('#hnut').count() == 1, 'Home shows stress and nutrition')
+        await tab(pg, 'health'); await pg.wait_for_timeout(400)
         await pg.click('#hsec button[data-s="training"]'); await pg.wait_for_timeout(500)
         check(await pg.locator('.prgrid .pr').count() >= 4, 'personal records shown')
         check(await pg.locator('.rlab').count() == 6, 'fitness radar with 6 spokes')

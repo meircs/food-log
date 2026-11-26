@@ -49,7 +49,7 @@ if (!foods) { foods = SEED.map(f => ({ ...f, id: uid(), uses: 0, lastUsed: 0 }))
 let entries = store.get('entries', []);
 foods.forEach(f => { if (f.packGrams === undefined && /^Activia berry yogurt/.test(f.name)) f.packGrams = 650; });
 let settings = Object.assign({ kcal: 2200, protein: 130, ghRepo: 'meircs/garmin-health', ghPath: 'data/food.csv', ghLibPath: 'data/food_library.json', ghSuppPath: 'data/supplements.csv', ghToken: '' }, store.get('settings', {}));
-const state = { tab: 'today', date: todayStr(), q: '', fq: '' };
+const state = { tab: 'home', date: todayStr(), q: '', fq: '' };
 
 let meals = store.get('meals', []);
 let supps = store.get('supps', []);       // [{id, name, dose}]
@@ -192,6 +192,7 @@ function slideDay(dir, fromX = 0) {
 // ---------- chrome ----------
 function renderHeader() {
   const h = $('#hdr');
+  if (state.tab === 'home') { renderHomeHeader(h); return; }
   if (state.tab === 'today' || state.tab === 'add') {
     h.innerHTML = `<button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
       <h1 id="dlabel">${state.tab === 'add' ? 'Add to ' + (state.addMeal ? cap(state.addMeal) + ', ' : '') : ''}${esc(dateLabel(state.date))}</h1>
@@ -205,6 +206,8 @@ function renderHeader() {
   }
 }
 const ICONS = {
+  home: '<path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/>',
+  food: '<path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M16 3c-1.7 0-3 2.2-3 5s1.3 4 3 4v9"/>',
   today: '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   stats: '<path d="M5 20V11M12 20V5M19 20v-7"/>',
@@ -215,14 +218,19 @@ const ICONS = {
 const icon = k => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 function renderTabs() {
   const pending = entries.filter(e => !e.exported).length;
-  const tabs = [['today', 'today', 'Today'], ['add', 'add', 'Add'], ['stats', 'stats', 'Stats'], ['health', 'health', 'Health'], ['ai', 'ai', 'AI'], ['more', 'more', 'More']];
+  const tabs = [['home', 'home', 'Home'], ['today', 'food', 'Food'], ['stats', 'stats', 'Stats'], ['health', 'health', 'Health'], ['ai', 'ai', 'AI'], ['more', 'more', 'More']];
   $('#tabs').innerHTML = tabs.map(([k, i, l]) =>
     `<button data-t="${k}" class="${state.tab === k || (k === 'more' && state.tab === 'foods') ? 'on' : ''}"><span>${icon(i)}</span>${l}${k === 'more' && pending ? `<i class="badge">${pending}</i>` : ''}</button>`).join('');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { state.tab = b.dataset.t; state.addMeal = null; render('fade'); window.scrollTo(0, 0); });
+  // Floating + (like Bevel): adds food from Home and the Food tab
+  let fab = $('#fab');
+  if (!fab) { fab = document.createElement('button'); fab.id = 'fab'; fab.className = 'fab'; fab.setAttribute('aria-label', 'Add food'); fab.innerHTML = icon('add'); document.body.appendChild(fab);
+    fab.onclick = () => { if (state.tab === 'home') state.date = todayStr(); state.tab = 'add'; state.addMeal = null; render('fade'); window.scrollTo(0, 0); }; }
+  fab.style.display = state.tab === 'home' || state.tab === 'today' ? '' : 'none';
 }
 function render(anim) {
   if (!sliding) { const v0 = $('#view'); if (v0 && v0.style.transform && !v0.style.transition) { v0.style.transform = ''; v0.style.opacity = ''; } }
   renderHeader(); renderTabs();
   const v = $('#view'); if (v && anim) { v.classList.remove('in-left', 'in-right', 'fade'); void v.offsetWidth; v.classList.add(anim); }
-  ({ today: viewToday, add: viewAdd, stats: viewStats, health: viewHealth, ai: viewAI, foods: viewFoods, more: viewMore })[state.tab]();
+  ({ home: viewHome, today: viewToday, add: viewAdd, stats: viewStats, health: viewHealth, ai: viewAI, foods: viewFoods, more: viewMore })[state.tab]();
 }

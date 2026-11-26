@@ -18,12 +18,14 @@ async function pullGarmin(force) {
     garmin = {}; d.forEach(r => { if (r[iD] && r[iT]) garmin[r[iD]] = { total: num(r[iT]), active: num(r[iA]) }; }); store.set('garmin', garmin);
     const F = { score: 'sleep_score', hrs: 'sleep_hours', deep: 'deep_h', light: 'light_h', rem: 'rem_h', awake: 'awake_h', hrv: 'hrv_last_night', hrvWk: 'hrv_weekly_avg',
       hrvLo: 'hrv_baseline_low', hrvHi: 'hrv_baseline_high', rhr: 'resting_hr', stress: 'avg_stress', bbHi: 'body_battery_high', bbLo: 'body_battery_low',
-      steps: 'steps', km: 'distance_km', active: 'active_kcal', total: 'total_kcal', imMod: 'intensity_min_moderate', imVig: 'intensity_min_vigorous' };
+      steps: 'steps', km: 'distance_km', active: 'active_kcal', total: 'total_kcal', imMod: 'intensity_min_moderate', imVig: 'intensity_min_vigorous',
+      maxStress: 'max_stress', bbNow: 'body_battery_latest', bbCh: 'body_battery_charged', bbDr: 'body_battery_drained', sRest: 'stress_rest_min', sLow: 'stress_low_min', sMed: 'stress_medium_min', sHigh: 'stress_high_min',
+      stepsGoal: 'steps_goal', resp: 'respiration_avg', spo2: 'spo2_avg', sleepHr: 'sleep_avg_hr', sleepStress: 'sleep_avg_stress' };
     const idx = Object.fromEntries(Object.entries(F).map(([k, c]) => [k, h.indexOf(c)]));
     const iS = h.indexOf('sleep_start'), iE = h.indexOf('sleep_end'), iH = h.indexOf('hrv_status');
     health = {};
     d.forEach(r => { if (!r[iD]) return; const o = {}; for (const [k, i] of Object.entries(idx)) { const v = r[i]; o[k] = v === '' || v == null ? null : num(v); }
-      o.bed = (r[iS] || '').slice(11, 16); o.wake = (r[iE] || '').slice(11, 16); o.hrvStatus = r[iH] || ''; health[r[iD]] = o; });
+      o.bed = (r[iS] || '').slice(11, 16); o.wake = (r[iE] || '').slice(11, 16); o.hrvStatus = r[iH] || ''; o.bbFb = r[h.indexOf('body_battery_feedback')] || ''; o.until = r[h.indexOf('wellness_until')] || ''; health[r[iD]] = o; });
     store.set('health', health); }
   if (a) { const h = a.shift(); const ix = k => h.indexOf(k);
     acts = a.filter(r => r[ix('date')]).map(r => ({ date: r[ix('date')], start: (r[ix('start_local')] || '').slice(11, 16), name: r[ix('name')], type: r[ix('type')],
