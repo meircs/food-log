@@ -178,7 +178,9 @@ function closeSheet(animated = true) {
 // iOS-like day change: content slides out, the new day slides in with an ease-out curve.
 let sliding = false;
 function slideDay(dir, fromX = 0) {
-  const v = $('#view'); if (sliding || !v) return; sliding = true;
+  const v = $('#view'); if (sliding || !v) return;
+  if (state.tab === 'home' && dir > 0 && state.date >= todayStr()) return;   // no future days on Home
+  sliding = true;
   const W = window.innerWidth;
   v.style.transition = 'transform .18s cubic-bezier(.4,0,1,1), opacity .18s'; v.style.transform = `translateX(${-dir * W * 0.6}px)`; v.style.opacity = '0';
   setTimeout(() => {

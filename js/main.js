@@ -42,7 +42,7 @@ scheduleSync();
     if (!mode) {
       if (Math.abs(dx) < 24 && Math.abs(dy) < 10) return;
       if (sheet || $('#bd')) mode = 'none';   // sheets handle their own drag-to-close
-      else if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 2 && (state.tab === 'today' || state.tab === 'add')) mode = 'day';
+      else if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 2 && (state.tab === 'today' || state.tab === 'add' || state.tab === 'home')) mode = 'day';
       else if (dy > 0 && startScroll <= 0 && window.scrollY <= 0 && settings.ghToken) mode = 'pull';
       else mode = 'none';
     }

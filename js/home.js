@@ -85,12 +85,107 @@ function stressGauge(v) {
 
 function renderHomeHeader(h) {
   const d = state.date, isT = d === todayStr();
-  h.innerHTML = `<button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
-    <h1 id="dlabel">${isT ? 'Today' : esc(dateLabel(d))}</h1>
-    <button class="iconbtn" id="next" aria-label="Next day" ${isT ? 'disabled style="opacity:.3"' : ''}>›</button>`;
-  $('#prev').onclick = () => { state.date = addDays(state.date, -1); render('in-left'); };
-  $('#next').onclick = () => { if (state.date < todayStr()) { state.date = addDays(state.date, 1); render('in-right'); } };
-  $('#dlabel').onclick = () => { state.date = todayStr(); render(); };
+  const [y, m, dd] = d.split('-').map(Number), dt = new Date(y, m - 1, dd);
+  const label = `${isT ? 'Today' : d === addDays(todayStr(), -1) ? 'Yesterday' : dt.toLocaleDateString(undefined, { weekday: 'long' })}, ${dt.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}`;
+  h.innerHTML = `<label class="hdate"><span>${esc(label)}</span><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    <input type="date" id="hdpick" value="${d}" max="${todayStr()}" aria-label="Pick a day"></label>`;
+  $('#hdpick').onchange = e => { const v = e.target.value; if (v && v <= todayStr()) { state.date = v; render('fade'); } };
+}
+
+// ---------- weather (Open-Meteo, no key) ----------
+const WX = c => c === 0 ? ['☀️', 'Clear'] : c <= 2 ? ['🌤', 'Partly cloudy'] : c === 3 ? ['☁️', 'Cloudy'] : c <= 48 ? ['🌫', 'Fog'] : c <= 57 ? ['🌦', 'Drizzle'] : c <= 67 ? ['🌧', 'Rain'] : c <= 77 ? ['❄️', 'Snow'] : c <= 82 ? ['🌧', 'Showers'] : c <= 86 ? ['🌨', 'Snow showers'] : ['⛈', 'Storm'];
+function weatherChip() {
+  const w = store.get('wx', null);
+  if (!w) return `<button class="hchip" id="hwx"><span class="hchipi">📍</span><span><b>Weather</b><small>Tap to use your location</small></span></button>`;
+  const [ic, txt] = WX(w.code);
+  return `<button class="hchip" id="hwx"><span class="hchipi">${ic}</span><span><b>${Math.round(w.t)}°C</b><small>${esc(w.place || txt)}</small></span></button>`;
+}
+async function loadWeather(ask) {
+  const old = store.get('wx', null);
+  if (!ask && old && Date.now() - old.at < 30 * 60000) return;
+  const pos = await new Promise(res => {
+    const loc = store.get('wxLoc', null);
+    if (!ask && loc && Date.now() - loc.at < 6 * 3600000) return res(loc);
+    if (!navigator.geolocation) return res(loc);
+    navigator.geolocation.getCurrentPosition(p => { const l = { lat: +p.coords.latitude.toFixed(3), lon: +p.coords.longitude.toFixed(3), at: Date.now() }; store.set('wxLoc', l); res(l); },
+      () => res(loc), { timeout: 8000, maximumAge: 3600000 });
+  });
+  if (!pos) { if (ask) toast('Location is off. Allow it for this app in iPhone Settings → Privacy → Location.'); return; }
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${pos.lat}&longitude=${pos.lon}&current=temperature_2m,weather_code&timezone=auto`);
+    const j = await r.json();
+    let place = (old && old.lat === pos.lat && old.lon === pos.lon) ? old.place : '';
+    if (!place) { try { const g = await (await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${pos.lat}&longitude=${pos.lon}&localityLanguage=en`)).json();
+      place = [g.city || g.locality, (g.principalSubdivisionCode || '').split('-')[1] || g.countryCode].filter(Boolean).join(', '); } catch (e) { } }
+    store.set('wx', { t: j.current.temperature_2m, code: j.current.weather_code, place, lat: pos.lat, lon: pos.lon, at: Date.now() });
+    if (state.tab === 'home') { const c = $('#hwx'); if (c) { c.outerHTML = weatherChip(); wireWx(); } }
+  } catch (e) { if (ask) toast('Couldn’t load the weather'); }
+}
+function wireWx() { const c = $('#hwx'); if (c) c.onclick = () => loadWeather(true); }
+
+// ---------- Health Monitor: today vs your own normal ----------
+function monitorTile(k, label, ico, v, unit, fmtv, d, lowBad, highBad) {
+  const prev = Object.keys(health).filter(x => x < d && x >= addDays(d, -30)).map(x => health[x][k]).filter(x => x != null);
+  if (v == null) return `<div class="hmon off"><div class="hmonh">${ico} ${label}</div><div class="hmonv">No data</div></div>`;
+  let st = 'Normal', col = 'var(--accent)', pos = 0.5, lo = null, hi = null;
+  if (prev.length >= 7) {
+    const m = mean(prev), s = sd(prev) || 1; lo = m - 1.5 * s; hi = m + 1.5 * s;
+    const z = (v - m) / s; pos = Math.max(0.04, Math.min(0.96, 0.5 + z / 4));
+    if (z > 1.5 && highBad) { st = 'High'; col = '#e8963c'; } else if (z < -1.5 && lowBad) { st = 'Low'; col = '#e8963c'; }
+    else if (Math.abs(z) > 1.5) st = z > 0 ? 'Above usual' : 'Below usual';
+  }
+  return `<div class="hmon" data-mon="${k}"><div class="hmonh">${ico} ${label}</div>
+    <div class="hmonv">${fmtv(v)}<small> ${unit}</small></div><div class="hmons" style="color:${col}"><i style="background:${col}">✓</i>${st}</div>
+    <div class="hmonbar"><i style="background:${col};opacity:.75"></i><b style="bottom:calc(${(pos * 100).toFixed(0)}% - 8px);border-color:${col}"></b></div>
+    ${lo != null ? `<div class="hmonr">usual ${fmtv(lo)}–${fmtv(hi)}</div>` : ''}</div>`;
+}
+
+// ---------- Cardio load: last 7 days vs last 4 weeks ----------
+function dayLoad(d) {
+  let trimp = 0;
+  acts.filter(a => a.date === d).forEach(a => { const z = a.z || [], zt = z.reduce((s, x) => s + (x || 0), 0);
+    trimp += zt ? z.reduce((s, x, i) => s + (x || 0) * H_ZW[i], 0) : (a.dur || 0) * 2; });
+  return trimp + ((health[d] || {}).steps || 0) / 250;
+}
+function cardioLoad(d) {
+  const days = Array.from({ length: 70 }, (_, i) => addDays(d, -69 + i)), L = Object.fromEntries(days.map(x => [x, dayLoad(x)]));
+  const avg = (end, n) => { let s = 0; for (let i = 0; i < n; i++) s += L[addDays(end, -i)] || 0; return s / n; };
+  const series = days.slice(-42).map(x => ({ x, a: avg(x, 7), c: avg(x, 28) }));
+  const last = series[series.length - 1], ratio = last.c ? last.a / last.c : 1;
+  const st = ratio < 0.8 ? ['Detraining', '#4c9be8', 'Less than your usual. Fine for a rest week; keep it short.'] : ratio <= 1.3 ? ['Optimal', 'var(--accent)', 'Steady build. Keep this rhythm.']
+    : ratio <= 1.5 ? ['High', '#e8963c', 'Ramping up fast. Add a recovery day if you feel tired.'] : ['Overreaching', '#e5487f', 'Much more than your body is used to. Plan an easy day.'];
+  return { value: Math.round(last.a), ratio, st, series };
+}
+function cardioCard(d) {
+  const c = cardioLoad(d), W = 200, H = 70, S = c.series, hi = Math.max(...S.map(p => Math.max(p.a, p.c * 1.3))) || 1;
+  const X = i => (i / (S.length - 1)) * W, Y = v => H - 4 - (v / hi) * (H - 10);
+  const band = S.map((p, i) => `${X(i).toFixed(1)},${Y(p.c * 1.3).toFixed(1)}`).join(' ') + ' ' + S.map((p, i) => `${X(i).toFixed(1)},${Y(p.c * 0.8).toFixed(1)}`).reverse().join(' ');
+  const line = S.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p.a).toFixed(1)}`).join('');
+  const lp = S[S.length - 1];
+  return `<div class="card hcl" id="hcl"><div class="hclh">🏃 Last 7 days</div>
+    <div class="hclb"><div><div class="hclv">${c.value}</div><div class="hcls" style="color:${c.st[1]}">${c.st[0]}</div></div>
+    <svg viewBox="0 0 ${W} ${H}" class="hclc"><polygon points="${band}" fill="var(--accent)" opacity=".16"/><path d="${line}" fill="none" stroke="#b9a7ff" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="${X(S.length - 1)}" cy="${Y(lp.a)}" r="5" fill="${c.st[1]}" stroke="var(--card)" stroke-width="2"/></svg></div>
+    <div class="small muted">${esc(c.st[2])} The shaded band is your healthy range, based on your last 4 weeks.</div></div>`;
+}
+
+// ---------- Timeline of the day ----------
+function timelineCard(d) {
+  const ev = [], h = health[d] || {};
+  if (h.wake && h.hrs >= 3) ev.push({ t: h.wake, ic: '🌅', title: 'Woke up', sub: `${r1(h.hrs)} h sleep${h.score ? ` · score ${h.score}` : ''}` });
+  acts.filter(a => a.date === d).forEach(a => ev.push({ t: a.start, ic: WK_ICON(a.type), title: a.name || wkWords(a.type), sub: `${r0(a.dur)} min${a.km ? ` · ${r1(a.km)} km` : ''}${a.hr ? ` · ${r0(a.hr)} bpm` : ''}`, act: a }));
+  const food = [...entries, ...remote].filter(e => e.date === d), meals = {};
+  food.forEach(e => { const k = e.meal || 'snack'; (meals[k] = meals[k] || []).push(e); });
+  Object.entries(meals).forEach(([k, arr]) => { arr.sort((a, b) => a.time.localeCompare(b.time)); const t = totals(arr);
+    ev.push({ t: arr[0].time, ic: { breakfast: '🍳', lunch: '🥗', dinner: '🍽', snack: '🍎', drink: '☕' }[k] || '🍴', title: cap(k), sub: `${fmt(t.kcal)} kcal · ${r0(t.p)} g protein`, food: 1 }); });
+  weightLog.filter(w => w.date === d).forEach(w => ev.push({ t: w.time || '07:00', ic: '⚖️', title: 'Weigh-in', sub: `${r1(w.kg)} kg${w.bf ? ` · ${r1(w.bf)}% fat` : ''}` }));
+  (typeof bpAll === 'function' ? bpAll() : []).filter(x => x.date === d).forEach(x => ev.push({ t: x.time, ic: '🩺', title: 'Blood pressure', sub: `${r0(x.s)}/${r0(x.d)}` }));
+  ev.sort((a, b) => (a.t || '').localeCompare(b.t || ''));
+  const show = state.tlAll ? ev : ev.slice(0, 5);
+  return `<h2 class="hsec">Timeline</h2><div class="small muted" style="margin:-6px 4px 8px">${ev.length} event${ev.length === 1 ? '' : 's'}</div>
+    <div class="card htl">${ev.length ? show.map((e, i) => `<div class="htle" data-tl="${i}"><span class="htlt">${e.t ? minTxt(bedMin(e.t)) : ''}</span><span class="htli">${e.ic}</span><span class="grow"><b>${esc(e.title)}</b><div class="small muted">${esc(e.sub)}</div></span></div>`).join('')
+      : '<div class="muted small" style="padding:8px 2px">Nothing yet today.</div>'}
+      ${ev.length > 5 ? `<button class="btn secondary" id="htlall" style="margin-top:8px">${state.tlAll ? 'Show less' : `View all ${ev.length}`}</button>` : ''}</div>`;
 }
 
 function viewHome() {
@@ -107,7 +202,9 @@ function viewHome() {
   const bb = h.bbNow ?? null;
   const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)}m`;
   const plan = d === todayStr() && typeof planCardHTML === 'function' ? planCardHTML() : '';
-  let html = `<div class="hsync"><button class="hpill" id="hsync" ${garminSyncing ? 'disabled' : ''}>${garminSyncing ? 'Syncing… <span class="spin"></span>' : `↻ Sync${h.until && d === todayStr() ? ` · data to ${minTxt(bedMin(h.until))}` : ''}`}</button></div>
+  const lvlChip = (() => { const g = plan.match(/(Green|Yellow|Red) day/); if (!g) return '';
+    const c = { Green: 'var(--accent)', Yellow: '#d9a21b', Red: 'var(--warn)' }[g[1]]; return `<div class="hchip"><span class="hchipi" style="background:${c};color:#fff">●</span><span><b>${g[1]} day</b><small>from today's plan</small></span></div>`; })();
+  let html = `<div class="hchips">${lvlChip || `<div class="hchip"><span class="hchipi">🫀</span><span><b>Recovery ${s.recovery ?? '–'}%</b><small>${s.recovery == null ? 'no data yet' : s.recovery >= 66 ? 'ready to push' : s.recovery >= 35 ? 'train as planned' : 'take it easy'}</small></span></div>`}${d === todayStr() ? weatherChip() : ''}</div>
     <div class="card hscores">
       <div class="hrings">
         <button class="hr1" data-sc="strain">${ringSVGHome('st', s.strain, '#ffd36b', '#f59a2a', s.target)}<b>Strain</b></button>
@@ -136,9 +233,25 @@ function viewHome() {
         ${[['Protein', t.p, settings.protein, 'var(--p)'], ['Carbs', t.c, null, 'var(--c)'], ['Fat', t.f, null, 'var(--f)']].map(([k, v, g, c]) => `<div class="hmac"><span>${k}</span><b>${r0(v)} g${g ? `<span class="muted"> / ${g}</span>` : ''}</b><div class="bar"><i style="width:${g ? Math.min(100, v / g * 100) : Math.min(100, v / 2.5)}%;background:${c}"></i></div></div>`).join('')}
         ${burned ? `<div class="small muted" style="margin-top:6px">Net energy <b style="color:var(--ink)">${t.kcal - burned > 0 ? '+' : '−'}${fmt(Math.abs(t.kcal - burned))}</b> kcal · burned ${fmt(burned)} so far</div>` : ''}
       </div>
-    </div><div class="hend"></div>`;
+    </div>
+    <h2 class="hsec">Health Monitor</h2>
+    <div class="hmongrid">
+      ${monitorTile('resp', 'RR', '🫁', h.resp, 'rpm', v => r1(v), d, false, true)}
+      ${monitorTile('rhr', 'RHR', '❤️', h.rhr, 'bpm', v => r0(v), d, false, true)}
+      ${monitorTile('hrv', 'HRV', '〰️', h.hrv, 'ms', v => r0(v), d, true, false)}
+      ${monitorTile('spo2', 'SpO2', '💧', h.spo2, '%', v => r0(v), d, true, false)}
+      ${monitorTile('stress', 'Stress', '🧠', h.stress, 'avg', v => r0(v), d, false, true)}
+      ${monitorTile('hrs', 'Sleep', '🛏', h.hrs, '', v => `${Math.floor(v)}h ${String(Math.round((v % 1) * 60)).padStart(2, '0')}m`, d, true, false)}
+    </div>
+    <div class="small muted" style="margin:6px 4px 0">Compared with your own last 30 days. Wrist readings are estimates.</div>
+    <h2 class="hsec">Cardio Load</h2>${cardioCard(d)}
+    ${timelineCard(d)}
+    <div class="hend"></div>`;
   $('#view').innerHTML = html;
-  $('#hsync').onclick = async () => { if (garminSyncing) return; const p = syncGarminNow(() => {}); viewHome(); try { await p; } catch (e) { } if (state.tab === 'home') viewHome(); };
+  wireWx(); if (d === todayStr()) loadWeather(false);
+  document.querySelectorAll('[data-mon]').forEach(t => t.onclick = () => { state.tab = 'health'; state.hsec = 'overview'; render('fade'); window.scrollTo(0, 0); });
+  $('#hcl').onclick = () => { state.tab = 'health'; state.hsec = 'training'; render('fade'); window.scrollTo(0, 0); };
+  const ta = $('#htlall'); if (ta) ta.onclick = () => { state.tlAll = !state.tlAll; viewHome(); };
   document.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => homeScoreSheet(b.dataset.sc, s, h, d));
   $('#hnut').onclick = () => { state.tab = 'today'; render('fade'); window.scrollTo(0, 0); };
   $('#hstress').onclick = $('#hbb').onclick = () => { state.tab = 'health'; state.hsec = 'overview'; render('fade'); window.scrollTo(0, 0); };
