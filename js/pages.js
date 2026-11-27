@@ -11,7 +11,16 @@ const fmtHM = m => m == null ? '–' : `${Math.floor(m / 60)}h ${String(Math.rou
 const fmtClock = m => { if (m == null) return '–'; m = ((Math.round(m) % 1440) + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
 const hmToMin = t => t ? +t.slice(0, 2) * 60 + +t.slice(3, 5) : null;
 const daysBack = (end, n) => Array.from({ length: n }, (_, i) => addDays(end, -(n - 1) + i));
-const SLEEP_NEED = 8;   // hours a night, used for sleep bank and target bedtime
+// Sleep need (hours a night) for the sleep bank and target bedtime: your own setting, or worked out
+// as the typical sleep before mornings when recovery was high (66%+), from the last 90 days.
+function sleepNeed() {
+  if (settings.sleepNeed) return { h: settings.sleepNeed, auto: false };
+  const good = daysBack(addDays(todayStr(), -1), 90).filter(d => H(d, 'hrs') != null && (scoreOn(d).recovery ?? 0) >= 66).map(d => H(d, 'hrs')).sort((a, b) => a - b);
+  if (good.length < 6) return { h: 8, auto: true, n: good.length, fallback: true };
+  const med = good[Math.floor(good.length / 2)];
+  return { h: Math.max(6.5, Math.min(9.5, Math.round(med * 4) / 4)), auto: true, n: good.length };
+}
+const needTxt = n => `${Math.floor(n.h)}h${n.h % 1 ? ' ' + pad(Math.round(n.h % 1 * 60)) + 'm' : ''}`;
 
 // Score history (Strain/Recovery/Sleep per day), memoised until new data arrives.
 let _scoreMemo = { key: '', m: {} };
@@ -24,7 +33,7 @@ const H = (d, k) => (health[d] || {})[k] ?? null;
 const exMin = d => { const a = acts.filter(x => x.date === d); return a.length ? a.reduce((s, x) => s + (x.dur || 0), 0) : (health[d] ? 0 : null); };
 function sleepBank(d) {
   const v = daysBack(d, 7).map(x => H(x, 'hrs')).filter(x => x != null);
-  return v.length >= 3 ? v.reduce((s, x) => s + (x - SLEEP_NEED), 0) * 60 : null;
+  const need = sleepNeed().h; return v.length >= 3 ? v.reduce((s, x) => s + (x - need), 0) * 60 : null;
 }
 const bedClock = d => { const m = hmToMin(H(d, 'bed')); return m == null ? null : m < 720 ? m + 1440 : m; };   // after-midnight bedtimes sort after 23:59
 
@@ -58,7 +67,7 @@ const M = {
   sleepHr:  { n: 'Sleeping HR', u: 'bpm', get: d => H(d, 'sleepHr'), fmt: v => r0(v), good: 'down', c: '#e5484d', info: 'Average heart rate while asleep. It rises after alcohol, late meals, hard evening workouts and illness.' },
   sleepStress: { n: 'Sleep Stress', u: '', get: d => H(d, 'sleepStress'), fmt: v => r0(v), good: 'down', c: '#3fb3a8', info: 'Average stress level while asleep. Low (under ~15) means your body was able to switch off.' },
   bank:     { n: 'Sleep Bank', u: '', get: d => sleepBank(d), fmt: v => (v < 0 ? '−' : '+') + fmtHM(Math.abs(v)), good: 'up', c: '#e8963c',
-              info: `Sleep over the last 7 nights minus ${SLEEP_NEED} hours a night. Negative means sleep debt; a couple of earlier nights pays it back.` },
+              get info() { return `Sleep over the last 7 nights minus your sleep need (${needTxt(sleepNeed())} a night). Negative means sleep debt; a couple of earlier nights pays it back.`; } },
   bed:      { n: 'Bedtime', u: '', get: d => bedClock(d), fmt: v => fmtClock(v), good: null, c: '#8a7cf0', info: 'When you fell asleep. A steady bedtime (within about 30 minutes) improves sleep quality.' },
   wake:     { n: 'Wake Time', u: '', get: d => hmToMin(H(d, 'wake')), fmt: v => fmtClock(v), good: null, c: '#f2b51d', info: 'When you woke up for the day.' },
   stress:   { n: 'Stress Score', u: '', get: d => H(d, 'stress'), fmt: v => r0(v), good: 'down', c: '#3fb3a8',
@@ -169,7 +178,7 @@ function sleepPage(d) {
   const s = scoreOn(d), h = health[d] || {};
   const wakes = daysBack(d, 14).map(x => hmToMin(H(x, 'wake'))).filter(x => x != null);
   const wakeT = wakes.length >= 3 ? [...wakes].sort((a, b) => a - b)[Math.floor(wakes.length / 2)] : 7 * 60;
-  const target = wakeT - SLEEP_NEED * 60, wind = target - 30;
+  const need = sleepNeed(), target = wakeT - need.h * 60, wind = target - 30;
   const bank = sleepBank(d);
   const coach = h.hrs == null ? 'No sleep recorded for this night.' : [
     h.score != null && (h.score >= 80 ? 'Great sleep last night.' : h.score >= 60 ? 'Fair sleep last night.' : 'You had poor sleep last night.'),
@@ -189,13 +198,23 @@ function sleepPage(d) {
     ${stT ? `<div class="pcard"><b>Stages</b><div class="wkbar" style="height:14px">${st.map(x => x[1] ? `<i style="width:${x[1] / stT * 100}%;background:${x[2]}"></i>` : '').join('')}</div>
       <div class="hsleg small muted">${st.map(x => `<span><i style="background:${x[2]}"></i>${x[0]} ${fmtHM((x[1] || 0) * 60)}</span>`).join('')}</div></div>` : ''}
     <div class="pcard pbed"><div class="pbedt"><div><div class="small muted">Wind down</div><b>${fmtClock(wind)}</b></div><div><div class="small muted">Target bedtime</div><b>${fmtClock(target)}</b></div></div>
-      ${sleepDial(h, target, wakeT)}<div class="small muted" style="text-align:center">Based on your usual wake time (${fmtClock(wakeT)}) and ${SLEEP_NEED} h of sleep. Purple is last night; the dashed arc is your target.</div></div>
+      ${sleepDial(h, target, wakeT)}<div class="small muted" style="text-align:center">Based on your usual wake time (${fmtClock(wakeT)}) and your sleep need. Purple is last night; the dashed arc is your target.</div>
+      <button class="pneed" id="pneed"><span>Sleep need</span><b>${needTxt(need)}</b><span class="small muted">${need.auto ? (need.fallback ? 'default until there are 6 well-recovered nights' : `auto · from ${need.n} well-recovered nights`) : 'set by you'}</span><span class="parr">›</span></button></div>
     <div class="ptiles">${tile('🏦 Sleep Bank', bank == null ? '–' : `<span style="color:${bank < -60 ? '#e8963c' : '#3fb37f'}">${M.bank.fmt(bank)}</span>`, bank == null ? '' : bank < -60 ? 'Debt this week' : 'On track')}
       ${tile('😴 Sleep Stress', h.sleepStress != null ? r0(h.sleepStress) : '–', h.sleepHr ? `HR ${r0(h.sleepHr)} bpm asleep` : '')}</div>
     <h2 class="psec">Weekly sleep distribution</h2><div class="pcard"><div class="pweek">${'Mon Tue Wed Thu Fri Sat Sun'.split(' ').map((n, i) => `<div><div class="pwk" style="opacity:${wavg[i] == null ? .15 : .35 + Math.max(0, Math.min(1, (wavg[i] - wAll + 1) / 2)) * .65}"></div><span>${n}</span><small>${wavg[i] == null ? '–' : r1(wavg[i]) + 'h'}</small></div>`).join('')}</div>
       <div class="small muted" style="margin-top:6px">Average over the last 8 weeks. Brighter = more sleep.</div></div>
     <h2 class="psec">Trends</h2>${keys.map(x => trendCard(x, d)).join('')}`;
-  openPage('Sleep', html, pg => wireTrends(pg, d, keys), 'rgba(110,90,230,.24)');
+  openPage('Sleep', html, pg => { wireTrends(pg, d, keys); pg.querySelector('#pneed').onclick = () => needSheet(() => { pg.remove(); sleepPage(d); }); }, 'rgba(110,90,230,.24)');
+}
+function needSheet(done) {
+  const cur = settings.sleepNeed || 0, auto = (() => { const o = settings.sleepNeed; settings.sleepNeed = null; const n = sleepNeed(); settings.sleepNeed = o; return n; })();
+  const opts = [[0, `Auto (${needTxt(auto)})`, auto.fallback ? 'Uses 8 h until there are 6 nights before a 66%+ recovery' : `Your typical sleep before ${auto.n} well-recovered mornings`], ...[6.5, 7, 7.5, 8, 8.5, 9].map(h => [h, needTxt({ h }), ''])];
+  openSheet(`<div class="acthead">Sleep need</div><div class="small muted" style="text-align:center;margin:-8px 0 12px">Sets your sleep bank and target bedtime.</div>
+    <div class="actlist">${opts.map(([v, l, sub]) => `<label class="actrow"><span class="grow"><b>${l}</b>${sub ? `<small>${sub}</small>` : ''}</span><input type="radio" name="need" value="${v}"${v === cur ? ' checked' : ''}></label>`).join('')}</div>
+    <button class="btn actbtn" id="needok">Save</button>`, sh => {
+    sh.querySelector('#needok').onclick = () => { const v = +sh.querySelector('input[name=need]:checked').value; settings.sleepNeed = v || null; saveSettings(); closeSheet(); toast(`Sleep need: ${needTxt(sleepNeed())}`); done && done(); };
+  });
 }
 function sleepDial(h, target, wakeT) {
   const R = 92, C = 120, ang = m => (m / 1440) * 2 * Math.PI - Math.PI / 2, P = (m, r) => [C + r * Math.cos(ang(m)), C + r * Math.sin(ang(m))];
@@ -445,4 +464,71 @@ function cardioFocusHTML(d) {
   return `<div class="card"><b>Cardio Focus</b><div class="small muted" style="margin-bottom:6px">Where this workout's time went, by heart-rate zone</div>
     ${row('Anaerobic', ana, '#e5484d', d.anaerobic_te != null ? `TE ${r1(d.anaerobic_te)}` : '')}${row('High aerobic', high, '#f0a030', '')}${row('Low aerobic', low, '#3fc2b0', d.aerobic_te != null ? `TE ${r1(d.aerobic_te)}` : '')}
     <div class="small muted" style="margin-top:6px">Low aerobic = zones 1–2 (base fitness), high aerobic = zones 3–4 (tempo/threshold), anaerobic = zone 5. Heart-rate load from this workout: <b style="color:var(--ink)">${r0(trimp)}</b>.</div></div>`;
+}
+
+// ---------- Journal insights: what you log vs the next night ----------
+// For each habit, compare the next night's sleep, HRV, resting HR and recovery on days with it vs without,
+// over the last 120 days. Food habits only count days with food logged.
+const J_OUT = [
+  ['score', 'sleep score', 'up', d => H(d, 'score')],
+  ['hrv', 'HRV', 'up', d => H(d, 'hrv'), 'ms'],
+  ['rhr', 'resting HR', 'down', d => H(d, 'rhr'), 'bpm'],
+  ['rec', 'recovery', 'up', d => scoreOn(d).recovery, '%'],
+];
+function jFactors() {
+  const all = [...entries, ...remote], by = {};
+  all.forEach(e => (by[e.date] = by[e.date] || []).push(e));
+  const food = d => by[d] && by[d].length >= 2;   // a day counts as logged with 2+ entries
+  const sum = (d, k) => (by[d] || []).reduce((a, e) => a + (e[k] || 0), 0);
+  return [
+    ['late', '🌙', 'Late meal', 'a meal or snack of 150+ kcal after 9 pm', food, d => (by[d] || []).some(e => e.time >= '21:00' && e.kcal >= 150), 'After late meals'],
+    ['caf', '☕', 'Caffeine after 2 pm', 'coffee, tea or energy drinks after 2 pm', food, d => (by[d] || []).some(e => e.time >= '14:00' && (e.caf || 0) > 0), 'After afternoon caffeine'],
+    ['alc', '🍺', 'Alcohol', 'any drink with alcohol', food, d => sum(d, 'alc') > 0, 'After drinking'],
+    ['prot', '🥩', 'Protein target hit', `${r0(settings.protein * 0.9)}+ g protein`, food, d => sum(d, 'p') >= settings.protein * 0.9, 'After high-protein days'],
+    ['over', '🍽', 'Big eating day', `more than ${fmt(settings.kcal + 300)} kcal`, food, d => sum(d, 'kcal') > settings.kcal + 300, 'After big eating days'],
+    ['wk', '🏋️', 'Workout', 'a run, ride or strength session (not walks)', d => !!health[d], d => acts.some(a => a.date === d && a.type !== 'walking'), 'After workout days'],
+    ['steps', '👟', '10k+ steps', '10,000 steps or more', d => H(d, 'steps') != null, d => H(d, 'steps') >= 10000, 'After 10k-step days'],
+    ['bed', '🛏', 'Late bedtime', 'asleep after 00:30', d => !!H(addDays(d, 1), 'bed'), d => (bedClock(addDays(d, 1)) || 0) > 1470, 'After late bedtimes'],
+  ];
+}
+let _jMemo = { key: '', v: null };
+function journalStats() {
+  const key = Object.keys(health).length + ':' + entries.length + ':' + remote.length + ':' + acts.length + ':' + todayStr() + ':' + settings.protein + ':' + settings.kcal;
+  if (_jMemo.key === key) return _jMemo.v;
+  const days = daysBack(addDays(todayStr(), -1), 120);
+  const out = jFactors().map(([k, ic, n, desc, valid, test, lead]) => {
+    const pool = days.filter(valid), yesD = pool.filter(test);
+    const res = J_OUT.map(([ok, on, good, get, u]) => {
+      const yes = [], no = [];
+      pool.forEach(d => { const v = get(addDays(d, 1)); if (v != null) (test(d) ? yes : no).push(v); });
+      if (yes.length < 4 || no.length < 4) return { ok, on, u, n: [yes.length, no.length] };
+      const diff = mean(yes) - mean(no), spread = sd([...yes, ...no]) || 1, z = diff / spread;
+      return { ok, on, u, diff, z, good: (diff > 0) === (good === 'up'), n: [yes.length, no.length], a: mean(yes), b: mean(no) };
+    });
+    return { k, ic, n, desc, lead, days: pool.length, hits: yesD.length, res };
+  });
+  // Strongest findings: |effect| at least 0.35 standard deviations
+  const finds = [];
+  out.forEach(f => f.res.forEach(r => { if (r.z != null && Math.abs(r.z) >= 0.35) finds.push({ f, r }); }));
+  finds.sort((x, y) => Math.abs(y.r.z) - Math.abs(x.r.z));
+  return (_jMemo = { key, v: { out, finds } }).v;
+}
+const jDiff = r => `${r.diff > 0 ? '+' : '−'}${r.u === 'ms' || r.u === 'bpm' ? r1(Math.abs(r.diff)) : r0(Math.abs(r.diff))}${r.u ? (r.u === '%' ? '%' : ' ' + r.u) : ''}`;
+const jSentence = (f, r) => `${f.lead}, your ${r.on} is ${r.u === 'ms' || r.u === 'bpm' ? r1(Math.abs(r.diff)) : r0(Math.abs(r.diff))}${r.u === '%' ? ' points' : r.u ? ' ' + r.u : ' points'} ${r.diff > 0 ? 'higher' : 'lower'}`;
+function journalCard() {
+  if (!Object.keys(health).length) return '';
+  const { finds } = journalStats(), top = [];
+  finds.forEach(x => { if (top.length < 3 && x.r.n[0] >= 5 && x.r.n[1] >= 5 && !top.some(t => t.f.k === x.f.k)) top.push(x); });
+  return `<h2 class="hsec">Journal Insights</h2><div class="card hjour" id="hjour">${top.length ? top.map(({ f, r }) => `<div class="hjl"><span class="htli">${f.ic}</span><span class="grow">${esc(jSentence(f, r))}.<div class="small muted">${r.n[0]} vs ${r.n[1]} nights</div></span><b style="color:${r.good ? '#3fb37f' : '#e5484d'}">${jDiff(r)}</b></div>`).join('')
+    : '<div class="small muted">No clear patterns yet. They show up once a habit has at least 5 nights with it and 5 without, so keep logging food.</div>'}
+    <div class="small muted hjfoot">From the last 120 days of your logs · tap for all habits</div></div>`;
+}
+function journalPage() {
+  const { out } = journalStats();
+  const html = `<div class="phero"><h1>Journal Insights</h1><div class="psub">How your habits line up with the next night</div></div>
+    <div class="pcoach" style="margin-top:14px"><div class="small muted">How to read this</div>Each habit compares the night after days <b>with</b> it against days <b>without</b> it, over the last 120 days. Green means better, red worse. These are patterns in your own data, not proof of cause, and they get more reliable as you log more.</div>
+    ${out.map(f => `<div class="pcard"><div class="pjh"><span class="htli">${f.ic}</span><span class="grow"><b>${esc(f.n)}</b><div class="small muted">${esc(f.desc)} · ${f.hits} of ${f.days} days${f.res.some(r => r.z != null && Math.min(...r.n) < 8) ? ' · early, few nights' : ''}</div></span></div>
+      ${f.res.map(r => r.z == null ? `<div class="pjr"><span>${cap(r.on)}</span><span class="small muted">Not enough data (${r.n[0]} with, ${r.n[1]} without)</span></div>`
+        : `<div class="pjr"><span>${cap(r.on)}</span><span class="pjbar"><i style="${r.diff >= 0 ? 'left:50%' : 'right:50%'};width:${Math.min(50, Math.abs(r.z) * 40)}%;background:${Math.abs(r.z) < 0.2 ? '#8d8b85' : r.good ? '#3fb37f' : '#e5484d'}"></i></span><b style="color:${Math.abs(r.z) < 0.2 ? 'var(--muted)' : r.good ? '#3fb37f' : '#e5484d'}">${jDiff(r)}</b></div>`).join('')}</div>`).join('')}`;
+  openPage('Journal Insights', html, null, 'rgba(76,155,232,.2)');
 }

@@ -185,6 +185,45 @@ async function loadWeather(ask) {
 }
 function wireWx() { const c = $('#hwx'); if (c) c.onclick = () => loadWeather(true); }
 
+// ---------- Fuel: what to eat today, from strain and goal ----------
+// Your calorie target is set for a typical day. A harder day than usual adds food, an easier one trims it
+// (about 8 kcal per strain point vs your 30-day usual, at most −300 / +400). Protein stays at target.
+function fuelPlan(d, s) {
+  const base = settings.kcal, prot = settings.protein;
+  const prev = Array.from({ length: 30 }, (_, i) => addDays(d, -(i + 1))).map(x => (typeof scoreOn === 'function' ? scoreOn(x) : homeScores(x)).strain).filter(v => v != null);
+  const usual = prev.length >= 7 ? Math.round(mean(prev)) : null;
+  let adj = 0;
+  if (s.strain != null && usual != null && s.status !== 'sick') adj = Math.max(-300, Math.min(400, Math.round((s.strain - usual) * 8 / 50) * 50));
+  return { kcal: base + adj, adj, prot, usual };
+}
+function fuelIdea(remK, remP) {
+  if (remP < 10) return '';
+  const per = f => f.basis === 'serving' ? { k: f.kcal, p: f.p, l: f.servingLabel || '1 serving' } : f.servingGrams ? { k: f.kcal * f.servingGrams / 100, p: f.p * f.servingGrams / 100, l: f.servingLabel || `${f.servingGrams} g` } : null;
+  const c = foods.map(f => ({ f, s: per(f) })).filter(x => x.s && x.s.p >= 8 && x.s.k <= Math.max(250, remK + 100) && x.s.p / Math.max(1, x.s.k) >= 0.06)
+    .sort((a, b) => b.s.p / b.s.k - a.s.p / a.s.k || (b.f.uses || 0) - (a.f.uses || 0)).slice(0, 2);
+  const nm = n => { const t = String(n).split(/[,(]/)[0].trim(); return t.length > 34 ? t.slice(0, 32).trim() + '…' : t; };
+  return c.length ? `Ideas: ${c.map(x => `${esc(nm(x.f.name))} (${r0(x.s.k)} kcal, ${r0(x.s.p)} g protein)`).join(' or ')}.` : '';
+}
+function fuelCard(d, s, t, burned) {
+  const isT = d === todayStr(), pl = isT ? fuelPlan(d, s) : { kcal: settings.kcal, adj: 0, prot: settings.protein };
+  const remK = Math.round(pl.kcal - t.kcal), remP = Math.round(pl.prot - t.p);
+  let head = '';
+  if (isT) {
+    const why = s.status && s.status !== 'active' ? `You're marked as ${ACT[s.status].n.toLowerCase()}, so eat to your normal target`
+      : s.strain == null || pl.usual == null ? 'Aim for your usual target'
+      : `Strain ${s.strain}% is ${Math.abs(s.strain - pl.usual) < 6 ? 'about your usual' : s.strain > pl.usual ? `above your usual ${pl.usual}%` : `below your usual ${pl.usual}%`}, so aim for`;
+    const tgt = `~${fmt(Math.round(pl.kcal / 50) * 50)} kcal${pl.adj ? ` (${pl.adj > 0 ? '+' : '−'}${Math.abs(pl.adj)})` : ''} and ${pl.prot} g protein`;
+    const left = remK > 50 || remP > 5 ? ` ${[remK > 50 && `${fmt(remK)} kcal`, remP > 5 && `${remP} g protein`].filter(Boolean).join(' and ')} to go.` : remK < -150 ? ` You're ${fmt(-remK)} kcal over.` : ' Target reached.';
+    head = `<div class="hfuel">${why.endsWith('for') ? `${why} <b>${tgt}</b>.` : `${why}: <b>${tgt}</b>.`}${left}${remK > -150 ? ` <span class="muted">${fuelIdea(remK, remP)}</span>` : ''}</div>`;
+  }
+  return `<div class="card hnut" id="hnut">${head}<div class="hnutrow">
+      ${ringSVG(pl.kcal ? t.kcal / pl.kcal : 0, 'var(--accent)', fmt(t.kcal), `of ${fmt(Math.round(pl.kcal / 50) * 50)}`, t.kcal > pl.kcal)}
+      <div class="grow">
+        ${[['Protein', t.p, pl.prot, 'var(--p)'], ['Carbs', t.c, null, 'var(--c)'], ['Fat', t.f, null, 'var(--f)']].map(([k, v, g, c]) => `<div class="hmac"><span>${k}</span><b>${r0(v)} g${g ? `<span class="muted"> / ${g}</span>` : ''}</b><div class="bar"><i style="width:${g ? Math.min(100, v / g * 100) : Math.min(100, v / 2.5)}%;background:${c}"></i></div></div>`).join('')}
+        ${burned ? `<div class="small muted" style="margin-top:6px">Net energy <b style="color:var(--ink)">${t.kcal - burned > 0 ? '+' : '−'}${fmt(Math.abs(t.kcal - burned))}</b> kcal · burned ${fmt(burned)} so far</div>` : ''}
+      </div></div></div>`;
+}
+
 // ---------- Health Monitor: today vs your own normal ----------
 function monitorTile(k, label, ico, v, unit, fmtv, d, lowBad, highBad) {
   const prev = Object.keys(health).filter(x => x < d && x >= addDays(d, -30)).map(x => health[x][k]).filter(x => x != null);
@@ -287,14 +326,9 @@ function viewHome() {
     </div>
     <div class="card hbb" id="hbb"><span class="hbolt">⚡</span><div class="hbbbar">${Array.from({ length: 30 }, (_, i) => `<i class="${bb != null && i < Math.round(bb / 100 * 30) ? 'on' : ''}"></i>`).join('')}</div><b>${bb != null ? bb + '%' : h.bbHi != null ? h.bbHi + '%' : '–'}</b></div>
     <div class="small muted hbbsub">${bb != null ? `Body Battery now${h.bbFb ? ' · ' + esc(BB_FB(h.bbFb)) : ''}` : 'Body Battery peak'}${h.bbHi != null ? ` · today ${h.bbLo}–${h.bbHi}` : ''}${h.bbCh != null ? ` · +${h.bbCh} / −${h.bbDr}` : ''}</div>
-    <h2 class="hsec">Nutrition</h2>
-    <div class="card hnut" id="hnut">
-      ${ringSVG(settings.kcal ? t.kcal / settings.kcal : 0, 'var(--accent)', fmt(t.kcal), `of ${fmt(settings.kcal)}`, t.kcal > settings.kcal)}
-      <div class="grow">
-        ${[['Protein', t.p, settings.protein, 'var(--p)'], ['Carbs', t.c, null, 'var(--c)'], ['Fat', t.f, null, 'var(--f)']].map(([k, v, g, c]) => `<div class="hmac"><span>${k}</span><b>${r0(v)} g${g ? `<span class="muted"> / ${g}</span>` : ''}</b><div class="bar"><i style="width:${g ? Math.min(100, v / g * 100) : Math.min(100, v / 2.5)}%;background:${c}"></i></div></div>`).join('')}
-        ${burned ? `<div class="small muted" style="margin-top:6px">Net energy <b style="color:var(--ink)">${t.kcal - burned > 0 ? '+' : '−'}${fmt(Math.abs(t.kcal - burned))}</b> kcal · burned ${fmt(burned)} so far</div>` : ''}
-      </div>
-    </div>
+    <h2 class="hsec">${d === todayStr() ? 'Fuel' : 'Nutrition'}</h2>
+    ${fuelCard(d, s, t, burned)}
+    ${typeof journalCard === 'function' ? journalCard() : ''}
     <h2 class="hsec">Health Monitor</h2>
     <div class="hmongrid">
       ${monitorTile('resp', 'RR', '🫁', h.resp, 'rpm', v => r1(v), d, false, true)}
@@ -316,6 +350,7 @@ function viewHome() {
   const ta = $('#htlall'); if (ta) ta.onclick = () => { state.tlAll = !state.tlAll; viewHome(); };
   document.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => scorePage(b.dataset.sc, d));
   $('#hnut').onclick = () => { state.tab = 'today'; render('fade'); window.scrollTo(0, 0); };
+  const jc = $('#hjour'); if (jc) jc.onclick = () => journalPage();
   $('#hstress').onclick = () => stressPage(d);
   $('#hbb').onclick = () => energyPage(d);
   if (typeof wirePlanCard === 'function') wirePlanCard();
