@@ -33,6 +33,9 @@ function homeScores(d) {
   out.strain = h.steps != null || today.length ? clampP(100 * (1 - Math.exp(-load / 110))) : null;
   out.strainParts = { trimp: r0(trimp), steps, workouts: today };
   out.target = out.recovery != null ? Math.max(30, Math.min(85, Math.round(25 + 0.55 * out.recovery))) : 50;
+  const st = d === todayStr() ? actStatus().s : 'active';
+  out.status = st;
+  if (st !== 'active') out.target = Math.min(out.target, ACT[st].cap);
   return out;
 }
 
@@ -53,6 +56,12 @@ function homeCoach(s, h, d) {
   if (s.strain == null && s.recovery == null) return 'Sync from Garmin to see today\'s scores.';
   const lines = [];
   const isToday = d === todayStr(), hr = new Date().getHours();
+  if (isToday && s.status && s.status !== 'active') {
+    lines.push(ACT[s.status].coach);
+    if (s.strain != null && s.strain > s.target + 10) lines.push(`Strain is already ${s.strain}%, above the ${s.target}% that suits today. Ease off for the rest of the day.`);
+    if (s.sleep != null && s.sleep < 60) lines.push(`Sleep was weak last night (${s.sleep}%), so an early night matters even more.`);
+    return lines.join(' ');
+  }
   if (s.recovery != null && s.recovery < 35) lines.push('Recovery is low today. Keep it easy: a walk and stretching are enough, and an early night will help most.');
   else if (s.strain != null && isToday) {
     const gap = s.target - s.strain;
@@ -63,6 +72,59 @@ function homeCoach(s, h, d) {
   if (s.sleep != null && s.sleep < 60) lines.push(`Last night's sleep was weak (${s.sleep}%), so protect tonight's bedtime.`);
   else if (s.sleep != null && s.sleep >= 80 && lines.length < 2) lines.push('Great sleep last night.');
   return lines.join(' ');
+}
+
+// ---------- activity status (Bevel-style) ----------
+// Active, Sick, Injured or On a Break. Lowers the strain target and changes coaching until it ends.
+const ACT = {
+  active:  { n: 'Active',     sub: 'Staying engaged and healthy',  ic: '🏃', c1: '#3fd8a4', c2: '#139b6c', cap: 100, coach: '' },
+  sick:    { n: 'Sick',       sub: 'Resting from illness',         ic: '🛏', c1: '#ffd85c', c2: '#e0a412', cap: 15,
+             coach: "You're marked as sick. Rest is the training today: skip workouts, drink plenty and sleep as much as you can." },
+  injured: { n: 'Injured',    sub: 'Recovering from an injury',    ic: '🩹', c1: '#ff8a7a', c2: '#d9423a', cap: 30,
+             coach: "You're marked as injured. Keep moving gently around the injury (walking, mobility) and skip anything that loads it." },
+  break:   { n: 'On A Break', sub: 'Taking time off from training', ic: '🏝', c1: '#7fa8ff', c2: '#3c62d6', cap: 25,
+             coach: "You're on a break from training. No workouts expected; everyday walking is plenty. Enjoy the time off." },
+};
+const ACT_KEEP = [['', 'Until changed'], ['1', '1 day'], ['3', '3 days'], ['7', '1 week'], ['14', '2 weeks']];
+function actStatus() {
+  const a = store.get('actStatus', null);
+  if (!a || !ACT[a.s] || (a.until && todayStr() > a.until)) return { s: 'active', until: null };
+  return a;
+}
+const actIcon = (k, cls = 'acti') => `<span class="${cls}" style="background:linear-gradient(160deg,${ACT[k].c1},${ACT[k].c2})">${ACT[k].ic}</span>`;
+const actUntil = a => !a.until ? 'Until changed' : a.until === todayStr() ? 'Until tonight' : `Until ${(([y, m, d]) => new Date(y, m - 1, d))(a.until.split('-').map(Number)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+function actChip() {
+  const a = actStatus();
+  return `<button class="hchip" id="hact">${actIcon(a.s, 'hchipi acti')}<span><b>${ACT[a.s].n}</b><small>${actUntil(a)}</small></span>
+    <svg class="hchev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>`;
+}
+function actSheet(intro) {
+  if (intro) {
+    openSheet(`<div class="acthead">Activity Status</div>
+      <div class="actgrid">${['active', 'injured', 'sick', 'break'].map(k => actIcon(k, 'actpill')).join('')}</div>
+      <h3 class="acttitle">Activity Status</h3>
+      <div class="actdesc">Set your Activity status to Active, Sick, Injured, or On a Break. The app will adjust your strain target and coaching to match how you feel.</div>
+      <button class="btn actbtn" id="actgo">Continue</button>`, sh => {
+      sh.querySelector('#actgo').onclick = () => { store.set('actIntro', true); actSheet(false); };
+    });
+    return;
+  }
+  const a = actStatus();
+  const keep = a.keep || '';
+  openSheet(`<div class="acthead">Activity Status</div>
+    <div class="actlist">${Object.keys(ACT).map(k => `<label class="actrow">${actIcon(k)}<span class="grow"><b>${ACT[k].n}</b><small>${ACT[k].sub}</small></span>
+      <input type="radio" name="acts" value="${k}"${k === a.s ? ' checked' : ''}></label>`).join('')}</div>
+    <label class="actkeep"><span>⏱ Keep status</span><select id="actkeep">${ACT_KEEP.map(([v, l]) => `<option value="${v}"${v === keep ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <button class="btn actbtn" id="actupd">Update</button>`, sh => {
+    const keepRow = sh.querySelector('.actkeep');
+    const sync = () => { keepRow.style.opacity = sh.querySelector('input[name=acts]:checked').value === 'active' ? .45 : 1; };
+    sh.querySelectorAll('input[name=acts]').forEach(r => r.onchange = sync); sync();
+    sh.querySelector('#actupd').onclick = () => {
+      const st = sh.querySelector('input[name=acts]:checked').value, n = sh.querySelector('#actkeep').value;
+      store.set('actStatus', st === 'active' ? null : { s: st, until: n ? addDays(todayStr(), +n - 1) : null, keep: n, set: todayStr() });
+      closeSheet(); toast(`Status: ${ACT[st].n}`); state.tab === 'home' && viewHome();
+    };
+  });
 }
 
 const STRESS_LBL = v => v == null ? '' : v <= 25 ? 'Rest' : v <= 50 ? 'Low' : v <= 75 ? 'Medium' : 'High';
@@ -202,9 +264,8 @@ function viewHome() {
   const bb = h.bbNow ?? null;
   const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)}m`;
   const plan = d === todayStr() && typeof planCardHTML === 'function' ? planCardHTML() : '';
-  const lvlChip = (() => { const g = plan.match(/(Green|Yellow|Red) day/); if (!g) return '';
-    const c = { Green: 'var(--accent)', Yellow: '#d9a21b', Red: 'var(--warn)' }[g[1]]; return `<div class="hchip"><span class="hchipi" style="background:${c};color:#fff">●</span><span><b>${g[1]} day</b><small>from today's plan</small></span></div>`; })();
-  let html = `<div class="hchips">${lvlChip || `<div class="hchip"><span class="hchipi">🫀</span><span><b>Recovery ${s.recovery ?? '–'}%</b><small>${s.recovery == null ? 'no data yet' : s.recovery >= 66 ? 'ready to push' : s.recovery >= 35 ? 'train as planned' : 'take it easy'}</small></span></div>`}${d === todayStr() ? weatherChip() : ''}</div>
+  const recChip = `<div class="hchip"><span class="hchipi">🫀</span><span><b>Recovery ${s.recovery ?? '–'}%</b><small>${s.recovery == null ? 'no data yet' : s.recovery >= 66 ? 'ready to push' : s.recovery >= 35 ? 'train as planned' : 'take it easy'}</small></span></div>`;
+  let html = `<div class="hchips">${d === todayStr() ? actChip() : recChip}${d === todayStr() ? weatherChip() : ''}</div>
     <div class="card hscores">
       <div class="hrings">
         <button class="hr1" data-sc="strain">${ringSVGHome('st', s.strain, '#ffd36b', '#f59a2a', s.target)}<b>Strain</b></button>
@@ -249,6 +310,7 @@ function viewHome() {
     <div class="hend"></div>`;
   $('#view').innerHTML = html;
   wireWx(); if (d === todayStr()) loadWeather(false);
+  const ac = $('#hact'); if (ac) ac.onclick = () => actSheet(!store.get('actIntro', false));
   document.querySelectorAll('[data-mon]').forEach(t => t.onclick = () => { state.tab = 'health'; state.hsec = 'overview'; render('fade'); window.scrollTo(0, 0); });
   $('#hcl').onclick = () => { state.tab = 'health'; state.hsec = 'training'; render('fade'); window.scrollTo(0, 0); };
   const ta = $('#htlall'); if (ta) ta.onclick = () => { state.tlAll = !state.tlAll; viewHome(); };

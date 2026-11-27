@@ -142,6 +142,19 @@ nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px)}
 @media (prefers-color-scheme:dark){:root{--ringtrack:#2b2d33;--ringcore:#33363d}}
 .hdate{flex:1;color:var(--ink);display:flex;align-items:center;gap:6px;position:relative;font-size:26px;font-weight:750;letter-spacing:-.01em;cursor:pointer;padding:2px 2px}
 .hdate svg{color:var(--muted);flex:none}.hdate input{position:absolute;inset:0;opacity:0;width:100%;height:100%;font-size:16px}
+.acti{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:21px;flex:none;box-shadow:inset 0 2px 3px rgba(255,255,255,.45),inset 0 -3px 5px rgba(0,0,0,.18),0 3px 8px rgba(0,0,0,.25)}
+.hchip .acti{width:38px;height:38px;border-radius:50%;font-size:18px}.hchev{flex:none;margin-left:auto;color:var(--muted)}#hact{padding-right:12px}
+.acthead{text-align:center;font-weight:650;font-size:17px;margin:2px 0 14px}
+.actgrid{display:grid;grid-template-columns:repeat(2,96px);gap:14px 18px;justify-content:center;margin:18px 0 22px}
+.actpill{height:60px;border-radius:30px;display:grid;place-items:center;font-size:30px;box-shadow:inset 0 3px 4px rgba(255,255,255,.5),inset 0 -4px 7px rgba(0,0,0,.2),0 6px 14px rgba(0,0,0,.3)}
+.acttitle{text-align:center;font-size:24px!important;margin:0 0 8px!important}.actdesc{text-align:center;color:var(--muted);font-size:15px;line-height:1.4;padding:0 10px}
+.actbtn{width:100%;border-radius:30px;padding:15px;font-size:17px;margin-top:22px}
+.actlist{display:flex;flex-direction:column;gap:8px}.actrow{display:flex;align-items:center;gap:14px;background:var(--card);border-radius:22px;padding:10px 16px 10px 10px}
+.actrow b{display:block;font-size:16px}.actrow small{display:block;color:var(--muted);font-size:13px}
+.actrow .grow{flex:1;min-width:0}.actrow input{appearance:none;-webkit-appearance:none;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--muted);flex:none;margin:0 0 0 auto;outline:none!important}
+.actrow input:checked{border:6px solid var(--ink)}
+.actkeep{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:18px;padding:6px 8px 6px 16px;margin-top:12px;color:var(--muted);transition:opacity .2s}
+.actkeep select{border:0;background:transparent;color:var(--muted);text-align:right;font:inherit;width:auto}
 .hchips{display:grid;grid-template-columns:1fr auto;gap:10px;margin:2px 0 12px}.hchip{display:flex;align-items:center;gap:10px;background:var(--card);border:0;border-radius:30px;padding:7px 16px 7px 7px;color:var(--ink);font:inherit;text-align:left;min-width:0}
 .hchipi{width:38px;height:38px;border-radius:50%;background:var(--bg);display:grid;place-items:center;font-size:18px;flex:none}.hchip b{display:block;font-size:15px}.hchip small{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hmongrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hmon{position:relative;background:var(--card);border-radius:18px;padding:12px 40px 12px 14px;cursor:pointer;min-height:104px}

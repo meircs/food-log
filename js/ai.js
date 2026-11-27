@@ -54,6 +54,7 @@ ${rows.join('\n')}
 ('-' = no food logged that day; food values are estimates.)
 WEIGHT (kg, last 30 days): ${w || 'none logged'}
 SUPPLEMENTS (days taken, last 7): ${sup || 'none tracked'}
+ACTIVITY STATUS: ${typeof actStatus === 'function' ? (a => ACT[a.s].n + (a.s !== 'active' ? ` (${actUntil(a)})` : '')) (actStatus()) : 'Active'}
 TODAY SO FAR: ${todayEs || 'nothing logged yet'} (time now ${nowTime()})
 PREVIOUS ADVICE (${prev ? new Date(prev.at).toLocaleString() : 'none'}): ${prev ? [prev.data.headline, ...(prev.data.next || [])].join(' | ') : 'none'}`;
 }
