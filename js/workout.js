@@ -96,6 +96,8 @@ function wkHtml(d, loading, missing) {
   if (loading) return h + `<div class="small muted" style="margin:14px 2px">Loading charts, route and splits…</div>`;
   if (missing) h += `<div class="small muted" style="margin:12px 2px">Full details for this workout aren't synced yet. Tap ↻ Sync from Garmin now, then open it again.</div>`;
 
+  if (typeof cardioFocusHTML === 'function') h += cardioFocusHTML(d);
+
   // Route
   if (d.route && d.route.length > 2) h += `<div class="card"><b>Route</b>${wkRoute(d.route)}</div>`;
 

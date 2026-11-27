@@ -311,31 +311,13 @@ function viewHome() {
   $('#view').innerHTML = html;
   wireWx(); if (d === todayStr()) loadWeather(false);
   const ac = $('#hact'); if (ac) ac.onclick = () => actSheet(!store.get('actIntro', false));
-  document.querySelectorAll('[data-mon]').forEach(t => t.onclick = () => { state.tab = 'health'; state.hsec = 'overview'; render('fade'); window.scrollTo(0, 0); });
-  $('#hcl').onclick = () => { state.tab = 'health'; state.hsec = 'training'; render('fade'); window.scrollTo(0, 0); };
+  document.querySelectorAll('[data-mon]').forEach(t => t.onclick = () => openMetric(t.dataset.mon, d, MON_KEYS));
+  $('#hcl').onclick = () => openLoad('cardio', d);
   const ta = $('#htlall'); if (ta) ta.onclick = () => { state.tlAll = !state.tlAll; viewHome(); };
-  document.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => homeScoreSheet(b.dataset.sc, s, h, d));
+  document.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => scorePage(b.dataset.sc, d));
   $('#hnut').onclick = () => { state.tab = 'today'; render('fade'); window.scrollTo(0, 0); };
-  $('#hstress').onclick = $('#hbb').onclick = () => { state.tab = 'health'; state.hsec = 'overview'; render('fade'); window.scrollTo(0, 0); };
+  $('#hstress').onclick = () => stressPage(d);
+  $('#hbb').onclick = () => energyPage(d);
   if (typeof wirePlanCard === 'function') wirePlanCard();
 }
 
-function homeScoreSheet(k, s, h, d) {
-  const row = (l, v) => `<div class="wkrow"><span>${l}</span><b>${v}</b></div>`;
-  let body = '';
-  if (k === 'strain') {
-    const w = s.strainParts.workouts;
-    body = `<h3>Strain ${s.strain ?? '–'}%</h3><div class="small muted">How hard your heart worked today. Target today: <b>${s.target}%</b> (set by your recovery).</div>
-      <div class="card" style="margin-top:12px">${row('Everyday steps', fmt(s.strainParts.steps))}${row('Workouts', w.length ? w.map(a => `${esc(a.name || a.type)} ${r0(a.dur)} min`).join(', ') : 'none')}${row('Heart-rate load', s.strainParts.trimp)}</div>
-      <div class="small muted">Minutes in higher heart-rate zones count more (zone 5 counts 6× zone 1). The scale flattens near the top, so going from 80% to 90% takes far more work than from 20% to 30%.</div>`;
-  } else if (k === 'recovery') {
-    const P = s.parts;
-    body = `<h3>Recovery ${s.recovery ?? '–'}%</h3><div class="small muted">How ready your body is for effort today, compared with your own last 30 days.</div>
-      <div class="card" style="margin-top:12px">${Object.entries({ hrv: 'HRV (35%)', rhr: 'Resting heart rate (25%)', sleep: 'Sleep (25%)', bb: 'Body Battery (15%)' }).map(([kk, l]) => P[kk] ? `<div class="wkrow"><span>${l}<div class="small muted">${esc(P[kk].txt)}</div></span><b>${P[kk].v}</b></div>` : '').join('')}</div>
-      <div class="small muted">Above ~66% is a good day to train hard; below ~35% is a day to take it easy.</div>`;
-  } else {
-    body = `<h3>Sleep ${s.sleep ?? '–'}%</h3><div class="small muted">Garmin's sleep score for the night ending ${shortDay(d, true)}.</div>
-      <div class="card" style="margin-top:12px">${row('Asleep', h.hrs != null ? `${r1(h.hrs)} h` : '–')}${row('Fell asleep · woke', `${h.bed ? minTxt(bedMin(h.bed)) : '–'} · ${h.wake ? minTxt(bedMin(h.wake)) : '–'}`)}${row('Deep · REM · light', `${r1(h.deep || 0)} · ${r1(h.rem || 0)} · ${r1(h.light || 0)} h`)}${row('Awake', h.awake != null ? `${r0(h.awake * 60)} min` : '–')}${h.sleepHr ? row('Avg heart rate asleep', `${r0(h.sleepHr)} bpm`) : ''}${h.hrv ? row('Overnight HRV', `${h.hrv} ms`) : ''}</div>`;
-  }
-  openSheet(body);
-}

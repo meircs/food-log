@@ -32,7 +32,8 @@ async function pullGarmin(force) {
       dur: num(r[ix('duration_min')]), km: num(r[ix('distance_km')]), hr: num(r[ix('avg_hr')]), kcal: num(r[ix('kcal')]), ate: num(r[ix('aerobic_te')]), load: num(r[ix('training_load')]),
       id: r[ix('activity_id')], max: num(r[ix('max_hr')]), ane: num(r[ix('anaerobic_te')]), z: [1, 2, 3, 4, 5].map(i => ix(`hr_z${i}_min`) >= 0 ? num(r[ix(`hr_z${i}_min`)]) : null),
       f1k: ix('fastest_1k_s') >= 0 ? num(r[ix('fastest_1k_s')]) || null : null, fmi: ix('fastest_mile_s') >= 0 ? num(r[ix('fastest_mile_s')]) || null : null,
-      f5k: ix('fastest_5k_s') >= 0 ? num(r[ix('fastest_5k_s')]) || null : null, f10k: ix('fastest_10k_s') >= 0 ? num(r[ix('fastest_10k_s')]) || null : null }))
+      f5k: ix('fastest_5k_s') >= 0 ? num(r[ix('fastest_5k_s')]) || null : null, f10k: ix('fastest_10k_s') >= 0 ? num(r[ix('fastest_10k_s')]) || null : null,
+      bbd: ix('bb_diff') >= 0 && r[ix('bb_diff')] !== '' && r[ix('bb_diff')] != null ? num(r[ix('bb_diff')]) : null }))
       .sort((x, y) => (y.date + y.start).localeCompare(x.date + x.start));
     store.set('acts', acts); }
   if (w) { const h = w.shift(); const iD = h.indexOf('date'), iK = h.indexOf('weight_kg'), iF = h.indexOf('body_fat_pct');

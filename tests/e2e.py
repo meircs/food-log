@@ -33,16 +33,16 @@ def fixtures():
         if n % 3 == 0:
             food.append(f'{D(n)},15:30,drink,"latte, medium",180,11,17,7,130,0,text,')
     food.append(f'{D(0)},12:00,lunch,"spaghetti with lean ground lamb and carrots, 1 bowl (~300 g: ~150 g pasta, ~75 g lamb)",505,29,52,20,0,0,photo,"test row"')
-    cols = 'date,sleep_score,sleep_hours,deep_h,light_h,rem_h,awake_h,sleep_start,sleep_end,sleep_avg_hr,sleep_avg_stress,awake_count,hrv_last_night,hrv_weekly_avg,hrv_status,hrv_baseline_low,hrv_baseline_high,resting_hr,min_hr,max_hr,avg_stress,max_stress,body_battery_high,body_battery_low,body_battery_charged,body_battery_drained,steps,distance_km,floors,active_kcal,total_kcal,intensity_min_moderate,intensity_min_vigorous,respiration_avg,spo2_avg'
+    cols = 'date,sleep_score,sleep_hours,deep_h,light_h,rem_h,awake_h,sleep_start,sleep_end,sleep_avg_hr,sleep_avg_stress,awake_count,hrv_last_night,hrv_weekly_avg,hrv_status,hrv_baseline_low,hrv_baseline_high,resting_hr,min_hr,max_hr,avg_stress,max_stress,body_battery_high,body_battery_low,body_battery_charged,body_battery_drained,steps,distance_km,floors,active_kcal,total_kcal,intensity_min_moderate,intensity_min_vigorous,respiration_avg,spo2_avg,stress_rest_min,stress_low_min,stress_medium_min,stress_high_min,body_battery_latest'
     daily = [cols]
     for n in range(400, -1, -1):
         d = D(n); late_prev = (n + 1) % 4 == 0
         score = 60 + rnd.randint(0, 25) - (12 if late_prev else 0)
-        daily.append(f'{d},{score},{6.5 + rnd.random():.2f},1.5,4.0,1.0,0.3,{D(n + 1)} 23:30,{d} 07:00,58,16,1,{38 + rnd.randint(0, 8) - (6 if (n + 1) % 5 == 0 else 0)},40,BALANCED,37,47,{54 + rnd.randint(0, 3)},50,150,25,90,{60 + rnd.randint(0, 30)},{10 + rnd.randint(0, 10)},50,50,{rnd.randint(3000, 12000)},5.0,8,{rnd.randint(150, 600)},{2100 + rnd.randint(0, 400) if n else 1400},{rnd.randint(0, 30)},{rnd.randint(0, 15)},15,95')
+        daily.append(f'{d},{score},{6.5 + rnd.random():.2f},1.5,4.0,1.0,0.3,{D(n + 1)} 23:30,{d} 07:00,58,16,1,{38 + rnd.randint(0, 8) - (6 if (n + 1) % 5 == 0 else 0)},40,BALANCED,37,47,{54 + rnd.randint(0, 3)},50,150,25,90,{60 + rnd.randint(0, 30)},{10 + rnd.randint(0, 10)},50,50,{rnd.randint(3000, 12000)},5.0,8,{rnd.randint(150, 600)},{2100 + rnd.randint(0, 400) if n else 1400},{rnd.randint(0, 30)},{rnd.randint(0, 15)},15,95,{rnd.randint(300, 600)},{rnd.randint(200, 400)},{rnd.randint(30, 200)},{rnd.randint(0, 30)},{rnd.randint(20, 70)}')
     weight = ['date,time,weight_kg,body_fat_pct,source,notes'] + [f'{D(n)},08:00,{70 - (21 - n) * 0.03:.2f},{16 - (21 - n) * 0.05:.1f},manual,' for n in range(21, -1, -3)]
-    acts = ['activity_id,date,start_local,name,type,duration_min,distance_km,avg_hr,max_hr,kcal,aerobic_te,anaerobic_te,training_load,hr_z1_min,hr_z2_min,hr_z3_min,hr_z4_min,hr_z5_min,fastest_1k_s,fastest_mile_s,fastest_5k_s,fastest_10k_s,elev_gain_m,total_sets,total_reps']
+    acts = ['activity_id,date,start_local,name,type,duration_min,distance_km,avg_hr,max_hr,kcal,aerobic_te,anaerobic_te,training_load,hr_z1_min,hr_z2_min,hr_z3_min,hr_z4_min,hr_z5_min,fastest_1k_s,fastest_mile_s,fastest_5k_s,fastest_10k_s,elev_gain_m,total_sets,total_reps,bb_diff']
     for n in range(0, 60, 2):
-        acts.append(f'{1000 + n},{D(n)},{D(n)} 18:00,Test Run,running,30,5,150,170,300,3.0,1.0,60,1,5,10,10,4,{330 + n},{560 + n},{1750 + n},,20,,')
+        acts.append(f'{1000 + n},{D(n)},{D(n)} 18:00,Test Run,running,30,5,150,170,300,3.0,1.0,60,1,5,10,10,4,{330 + n},{560 + n},{1750 + n},,20,,,-9')
     bp = ['date,time,period,systolic_1,diastolic_1,pulse_1,systolic_2,diastolic_2,pulse_2,notes', f'{D(5)},08:00,morning,140,90,70,,,,"day 1 (left out of the 7-day average)"',
           f'{D(4)},08:00,morning,120,76,62,,,,', f'{D(2)},20:00,evening,122,78,64,,,,', f'{D(0)},08:00,morning,121,77,60,,,,']
     sets_csv = ['row_id,activity_id,date,exercise,sub_exercise,sets,reps,max_weight_kg,volume_kg,duration_s']
@@ -69,6 +69,9 @@ def fixtures():
         'headline': 'Green: strength 30 min tonight, protein is the gap', 'summary': 'Slept 7.1 h.', 'next': ['Strength 30 min at 7 pm', 'Protein at breakfast', 'Screens off 11:40 pm'],
         'food_idea': 'Greek yogurt', 'watch': '', 'full': '## Sat — Green\n## Today\n- Strength: 3 rounds\n- Bed by 12:00'}}
     extra['data/ai_history.json'] = json.dumps({'history': [morning]})
+    for n in range(0, 4):
+        extra[f'data/intraday/{D(n)}.json'] = json.dumps({'date': D(n), 'stress': [[m, -2 if 1080 <= m < 1110 else (-1 if m < 420 and m % 30 == 0 else int(20 + 30 * abs(math.sin(m / 90))))] for m in range(0, 1290, 3)],
+                                                       'bb': [[m, max(5, min(100, 40 + m // 12 if m < 420 else 75 - (m - 420) // 18 - n * 3))] for m in range(0, 1290, 15)]})
     extra['data/bp.csv'] = '\n'.join(bp) + '\n'; extra['data/strength_sets.csv'] = '\n'.join(sets_csv) + '\n'
     return {**extra, 'data/food.csv': '\n'.join(food) + '\n', 'data/daily.csv': '\n'.join(daily) + '\n',
             'data/weight.csv': '\n'.join(weight) + '\n', 'data/activities.csv': '\n'.join(acts) + '\n'}
@@ -266,9 +269,43 @@ async def main():
         check(await pg.locator('.actpill').count() == 0 and await pg.locator('.actrow').count() == 4, 'later taps go straight to the list')
         await pg.click('.actrow:has-text("Active")'); await pg.click('#actupd'); await pg.wait_for_timeout(500)
         check('Active' in await pg.inner_text('#hact'), 'status back to Active')
-        await pg.click('.hr1[data-sc="recovery"]'); await pg.wait_for_timeout(400)
-        check(await pg.locator('.sheet:has-text("Recovery")').count() == 1, 'tapping a score explains it')
+        await pg.click('.hr1[data-sc="strain"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('#pg .phero:has-text("Strain")').count() == 1 and await pg.locator('#pg .ptrend').count() == 5, 'Strain page with trends')
+        check(await pg.locator('#pg .ptl1').count() >= 1, 'Strain timeline lists today\'s workout')
+        await pg.screenshot(path=f'{SHOTS}/pg-strain.png')
+        await pg.click('#pg .ptrend[data-met="steps"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('.sheet .pmchart').count() == 1 and await pg.locator('.sheet .ptrow').count() == 6, 'metric sheet: chart and trends table')
+        await pg.click('.sheet .prange button[data-r="365"]'); await pg.wait_for_timeout(300)
+        check(await pg.locator('.sheet .prange button.on').inner_text() == '1Y', 'metric range switches to 1Y')
         await pg.click('#xclose'); await pg.wait_for_timeout(400)
+        await pg.click('#pg .pgback'); await pg.wait_for_timeout(400)
+        check(await pg.locator('#pg').count() == 0, 'back closes the page')
+        await pg.click('.hr1[data-sc="recovery"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('#pg .pbrk').count() >= 3 and await pg.locator('#pg .ptrend').count() == 6, 'Recovery page with breakdown and trends')
+        await pg.screenshot(path=f'{SHOTS}/pg-recovery.png'); await pg.click('#pg .pgback'); await pg.wait_for_timeout(400)
+        await pg.click('.hr1[data-sc="sleep"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('#pg .pdial').count() == 1 and await pg.locator('#pg .pweek > div').count() == 7, 'Sleep page with bedtime dial and weekly distribution')
+        check('Sleep Bank' in await pg.inner_text('#pg'), 'Sleep page shows sleep bank')
+        await pg.screenshot(path=f'{SHOTS}/pg-sleep.png', full_page=False); await pg.click('#pg .pgback'); await pg.wait_for_timeout(400)
+        await pg.click('#hstress'); await pg.wait_for_timeout(900)
+        check(await pg.locator('#pg #pstressday svg rect').count() > 50, 'Stress page draws the day curve')
+        check(await pg.locator('#pg .pbrk').count() == 4, 'Stress page shows High/Medium/Low/Rest')
+        await pg.screenshot(path=f'{SHOTS}/pg-stress.png'); await pg.click('#pg .pgback'); await pg.wait_for_timeout(400)
+        await pg.click('#hbb'); await pg.wait_for_timeout(1800)
+        check(await pg.locator('#pg #peday path').count() >= 2, 'Energy Bank draws the energy curve')
+        check('-9%' in await pg.inner_text('#pg'), 'Energy usage shows Body Battery used by the workout')
+        check('than usual at' in await pg.inner_text('#pecoach'), 'Energy coaching compares with a typical day')
+        await pg.screenshot(path=f'{SHOTS}/pg-energy.png'); await pg.click('#pg .pgback'); await pg.wait_for_timeout(400)
+        await pg.click('.hmon[data-mon="hrv"]'); await pg.wait_for_timeout(500)
+        check(await pg.locator('.sheet .pchip').count() == 6 and await pg.locator('.sheet .pchip.on').inner_text() == 'Resting HRV', 'Health Monitor tile opens its metric with chips')
+        await pg.click('.sheet .pchip[data-g="rhr"]'); await pg.wait_for_timeout(300)
+        check('Resting HR' in await pg.inner_text('.sheet .acthead'), 'chip switches metric')
+        await pg.screenshot(path=f'{SHOTS}/pg-metric.png'); await pg.click('#xclose'); await pg.wait_for_timeout(400)
+        await pg.click('#hcl'); await pg.wait_for_timeout(500)
+        check(await pg.locator('.sheet:has-text("Cardio Load Breakdown")').count() == 1, 'Cardio Load sheet with breakdown')
+        await pg.click('.sheet .pchip[data-k="muscle"]'); await pg.wait_for_timeout(300)
+        check(await pg.locator('.sheet:has-text("Muscular Load Breakdown")').count() == 1, 'Muscular Load tab')
+        await pg.screenshot(path=f'{SHOTS}/pg-load.png'); await pg.click('#xclose'); await pg.wait_for_timeout(400)
         check(await pg.locator('#hstress').count() == 1 and await pg.locator('#hnut').count() == 1, 'Home shows stress and nutrition')
         await tab(pg, 'health'); await pg.wait_for_timeout(400)
         await pg.click('#hsec button[data-s="training"]'); await pg.wait_for_timeout(500)
@@ -288,6 +325,7 @@ async def main():
             await pg.mouse.move(box['x'] + box['width'] / 2, box['y'] + 40); await pg.mouse.down(); await pg.wait_for_timeout(150)
             check('bpm' in await sh.locator('#wkl-hr').inner_text(), 'touching a chart shows the value'); await pg.mouse.up()
             check(await sh.locator('text=of the time in your target').count() == 1, 'planned workout target shown')
+            check(await sh.locator('.card:has-text("Cardio Focus") .pbrk').count() == 3, 'workout shows cardio focus')
             await pg.click('#xclose'); await pg.wait_for_timeout(400)
             await pg.click('[data-act="0"]'); await pg.wait_for_timeout(1200)
             check(await pg.evaluate("document.documentElement.classList.contains('locked')"), 'page behind the sheet is frozen')
@@ -393,6 +431,11 @@ async def main():
             check(await p3.locator('#insights').count() == 1, f'insights card shown ({scheme})')
             for t in ['today', 'add', 'more']:
                 await tab(p3, t); await p3.screenshot(path=f'{SHOTS}/{t}-{scheme}.png', full_page=True)
+            await tab(p3, 'home'); await p3.wait_for_timeout(600)
+            for sel, nm in [('.hr1[data-sc="sleep"]', 'sleep'), ('#hbb', 'energy')]:
+                await p3.click(sel); await p3.wait_for_timeout(1200); await p3.screenshot(path=f'{SHOTS}/pg-{nm}-{scheme}.png')
+                await p3.click('#pg .pgback'); await p3.wait_for_timeout(400)
+            await p3.click('.hmon[data-mon="hrs"]'); await p3.wait_for_timeout(500); await p3.screenshot(path=f'{SHOTS}/pg-metric-{scheme}.png'); await p3.click('#xclose'); await p3.wait_for_timeout(400)
             check(not p3.errors, f'no script errors ({scheme})'); await c3.close()
 
         print('Offline')

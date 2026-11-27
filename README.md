@@ -15,6 +15,8 @@ Barcode scanning uses [html5-qrcode](https://github.com/mebjas/html5-qrcode) (Ap
 - `js/food.js`: Today, Add, supplements, saved meals, My foods, barcode
 - `js/stats.js`: Stats tab, targets model, food and health patterns, Garmin pull
 - `js/health.js`: Health tab
+- `js/home.js`: Home tab (scores, coaching, activity status, Health Monitor, Cardio Load, Timeline)
+- `js/pages.js`: detail pages from Home (Strain, Recovery, Sleep, Stress, Energy Bank), metric sheets, Cardio/Muscular Load, workout Cardio Focus
 - `js/more.js`: settings, targets, export, backup
 - `js/main.js`: boot
 
