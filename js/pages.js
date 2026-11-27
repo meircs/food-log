@@ -3,8 +3,8 @@
    - full pages for Strain, Recovery, Sleep, Stress and Energy Bank (Body Battery)
    - metric sheets (value vs your normal range, chart with 30D/3M/6M/1Y, trends analysis)
    - Cardio and Muscular Load sheet
-   Everything is computed from the Garmin data already synced; the stress and
-   Body Battery day curves come from data/intraday/<date>.json when present. */
+   Everything is computed from the Garmin data already synced; the Body Battery
+   and heart-rate day curves come from data/intraday/<date>.json when present. */
 
 // ---------- small helpers ----------
 const fmtHM = m => m == null ? '–' : `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m`;
@@ -202,12 +202,12 @@ function sleepDial(h, target, wakeT) {
   const arc = (a, b, r) => { let span = ((b - a) % 1440 + 1440) % 1440; const [x1, y1] = P(a, r), [x2, y2] = P(a + span, r); return `M${x1.toFixed(1)},${y1.toFixed(1)}A${r},${r} 0 ${span > 720 ? 1 : 0} 1 ${x2.toFixed(1)},${y2.toFixed(1)}`; };
   const b = hmToMin(h.bed), w = hmToMin(h.wake);
   const ticks = Array.from({ length: 24 }, (_, i) => { const [x1, y1] = P(i * 60, R - 18), [x2, y2] = P(i * 60, R - (i % 6 ? 22 : 28)); return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--muted)" stroke-width="${i % 6 ? 1 : 2}" opacity=".6"/>`; }).join('');
-  const lab = [[0, '12AM'], [360, '6AM'], [720, '12PM'], [1080, '6PM']].map(([m, t]) => { const [x, y] = P(m, R - 42); return `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle" font-size="11" fill="var(--muted)">${t}</text>`; }).join('');
+  const lab = [[0, '12AM'], [360, '6AM'], [720, '12PM'], [1080, '6PM']].map(([m, t]) => { const [x, y] = P(m, m % 720 ? R - 46 : R - 40); return `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${m === 360 ? 'end' : m === 1080 ? 'start' : 'middle'}" font-size="10" fill="var(--muted)">${t}</text>`; }).join('');
   return `<svg viewBox="0 0 240 240" class="pdial"><circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--ringtrack)" stroke-width="16"/>
     <path d="${arc(target, wakeT, R + 13)}" fill="none" stroke="#8a7cf0" stroke-width="3" stroke-dasharray="4 5" stroke-linecap="round"/>
     ${b != null && w != null ? `<path d="${arc(b, w, R)}" fill="none" stroke="#6e5ae6" stroke-width="16" stroke-linecap="round"/>` : ''}
-    ${ticks}${lab}<text x="${C}" y="${C - 2}" text-anchor="middle" font-size="22" font-weight="700" fill="var(--ink)">${h.hrs != null ? fmtHM(h.hrs * 60) : '–'}</text>
-    <text x="${C}" y="${C + 16}" text-anchor="middle" font-size="11" fill="var(--muted)">${b != null ? `${h.bed}–${h.wake}` : 'asleep'}</text></svg>`;
+    ${ticks}${lab}<text x="${C}" y="${C - 12}" text-anchor="middle" font-size="18" font-weight="700" fill="var(--ink)">${h.hrs != null ? fmtHM(h.hrs * 60) : '–'}</text>
+    <text x="${C}" y="${C + 26}" text-anchor="middle" font-size="10" fill="var(--muted)">${b != null ? `${h.bed}–${h.wake}` : 'asleep'}</text></svg>`;
 }
 
 // ---------- intraday (stress + Body Battery through the day) ----------
@@ -230,11 +230,25 @@ function dayAxis(W) { return [0, 6, 12, 18, 24].map(hh => `<text x="${(hh / 24 *
 function actMarks(d, W, y) { return acts.filter(a => a.date === d && a.start).map(a => { const x = hmToMin(a.start) / 1440 * W; return `<line x1="${x.toFixed(1)}" y1="${y}" x2="${x.toFixed(1)}" y2="${y + 200}" stroke="#e5487f" stroke-width="1" stroke-dasharray="2 3" opacity=".7"/><text x="${x.toFixed(1)}" y="${y - 2}" text-anchor="middle" font-size="13">${WK_ICON(a.type)}</text>`; }).join(''); }
 function stressDayChart(d, it) {
   const W = 320, Hh = 130;
-  if (!it || !(it.stress || []).length) return `<div class="pempty">The stress curve appears after the next Garmin sync.</div>`;
-  const bars = it.stress.filter(p => p[1] >= 0).map(p => { const x = p[0] / 1440 * W, hh = Math.max(1.5, p[1] / 100 * (Hh - 24)); return `<rect x="${x.toFixed(1)}" y="${(Hh - hh).toFixed(1)}" width="1.6" height="${hh.toFixed(1)}" fill="${STRESS_COL(p[1])}"/>`; }).join('');
-  const actv = it.stress.filter(p => p[1] === -2).map(p => `<rect x="${(p[0] / 1440 * W).toFixed(1)}" y="${Hh - 6}" width="1.6" height="6" fill="#e5487f" opacity=".6"/>`).join('');
-  return `<svg viewBox="0 -18 ${W} ${Hh + 34}" class="pday">${[25, 50, 75].map(v => `<line x1="0" x2="${W}" y1="${(Hh - v / 100 * (Hh - 24)).toFixed(1)}" y2="${(Hh - v / 100 * (Hh - 24)).toFixed(1)}" stroke="var(--line)" stroke-dasharray="2 4"/>`).join('')}
-    ${bars}${actv}${actMarks(d, W, 6)}${dayAxis(W).replace(/\{Y\}/g, Hh + 14)}</svg>`;
+  if (it && (it.stress || []).length) {   // stress readings (not in Garmin's Personal API today, kept for later)
+    const bars = it.stress.filter(p => p[1] >= 0).map(p => { const x = p[0] / 1440 * W, hh = Math.max(1.5, p[1] / 100 * (Hh - 24)); return `<rect x="${x.toFixed(1)}" y="${(Hh - hh).toFixed(1)}" width="1.6" height="${hh.toFixed(1)}" fill="${STRESS_COL(p[1])}"/>`; }).join('');
+    return `<svg viewBox="0 -18 ${W} ${Hh + 34}" class="pday">${bars}${actMarks(d, W, 6)}${dayAxis(W).replace(/\{Y\}/g, Hh + 14)}</svg>`;
+  }
+  if (!it || !(it.hr || []).length) return `<div class="pempty">The heart-rate curve appears after the next Garmin sync.</div>`;
+  return hrDayChart(d, it.hr, W, Hh);
+}
+// Heart rate through the day: above-resting minutes tinted by how far above your resting HR they are.
+function hrDayChart(d, hr, W, Hh) {
+  const rhr = H(d, 'rhr') || Math.min(...hr.map(p => p[1])), hi = Math.max(...hr.map(p => p[1]), rhr + 40), lo = Math.max(30, rhr - 15);
+  const X = m => m / 1440 * W, Y = v => Hh - (v - lo) / (hi - lo) * (Hh - 20);
+  const segs = [];
+  for (let i = 1; i < hr.length; i++) { const [m0, v0] = hr[i - 1], [m1, v1] = hr[i]; if (m1 - m0 > 20) continue;
+    const e = (v0 + v1) / 2 - rhr, c = e < 15 ? '#4c9be8' : e < 30 ? '#c9c24a' : e < 50 ? '#e8963c' : '#e5484d';
+    segs.push(`<line x1="${X(m0).toFixed(1)}" y1="${Y(v0).toFixed(1)}" x2="${X(m1).toFixed(1)}" y2="${Y(v1).toFixed(1)}" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>`); }
+  return `<svg viewBox="0 -18 ${W} ${Hh + 34}" class="pday"><line x1="0" x2="${W}" y1="${Y(rhr).toFixed(1)}" y2="${Y(rhr).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 4" opacity=".7"/>
+    <text x="${W}" y="${(Y(rhr) - 4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)">resting ${r0(rhr)}</text>
+    <text x="${W}" y="${(Y(hi) + 10).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)">${r0(hi)} bpm</text>
+    ${segs.join('')}${actMarks(d, W, 6)}${dayAxis(W).replace(/\{Y\}/g, Hh + 14)}</svg>`;
 }
 
 // ---------- Stress ----------
@@ -244,16 +258,16 @@ function stressPage(d) {
   const nr = normalOf('stress', d);
   const coach = h.stress == null ? 'No stress data for this day.' : !nr ? `Average stress ${h.stress}.` : h.stress > nr.hi ? 'Your stress is higher than usual today. Short breaks, a walk outside and slow breathing (4 seconds in, 6 out) bring it down.'
     : h.stress < nr.lo ? 'Stress is lower than usual today. Nice and calm.' : 'Your stress is within its normal range. Keep taking regular breaks to hold it there.';
-  const lastAct = it && it.stress && it.stress.filter(p => p[1] >= 0).slice(-1)[0];
+  const lastAct = it && it.hr && it.hr.length ? it.hr[it.hr.length - 1] : null;
   const html = `<div class="phero"><h1>Stress</h1><div class="psub">${dateSub(d)}</div><div class="pgauge">${stressGauge(h.stress)}</div></div>
-    <div class="ptiles">${tile('〰️ Last night HRV', h.hrv != null ? `${r0(h.hrv)}<small> ms</small>` : '–')}${tile(lastAct ? '🧠 Latest reading' : '❤️ Resting HR', lastAct ? `${lastAct[1]}<small> at ${fmtClock(lastAct[0])}</small>` : h.rhr != null ? `${r0(h.rhr)}<small> bpm</small>` : '–')}</div>
+    <div class="ptiles">${tile('〰️ Last night HRV', h.hrv != null ? `${r0(h.hrv)}<small> ms</small>` : '–')}${tile(lastAct && d === todayStr() ? '❤️ Last HR' : '❤️ Resting HR', lastAct && d === todayStr() ? `${lastAct[1]}<small> bpm</small>` : h.rhr != null ? `${r0(h.rhr)}<small> bpm</small>` : '–', lastAct && d === todayStr() ? `at ${fmtClock(lastAct[0])}` : '')}</div>
     <div class="pcoach"><div class="small muted">Coaching</div>${esc(coach)}</div>
-    <h2 class="psec">${esc(shortDay(d, true))}</h2><div class="small muted psecsub">Stress through the day</div><div class="pcard" id="pstressday">${stressDayChart(d, it)}</div>
+    <h2 class="psec">${esc(shortDay(d, true))}</h2><div class="small muted psecsub" id="pstresscap">${it && (it.stress || []).length ? 'Stress through the day' : 'Heart rate through the day: higher above your resting rate = more load (Garmin shares only daily stress totals)'}</div><div class="pcard" id="pstressday">${stressDayChart(d, it)}</div>
     ${tot ? `<div class="pcard">${parts.map(x => `<div class="pbrk"><span>${x[0]}</span><div class="pbrkbar"><i style="width:${(x[1] || 0) / tot * 100}%;background:${x[2]}"></i></div><b>${r0((x[1] || 0) / tot * 100)}%</b><span class="small muted pdur">${fmtHM(x[1] || 0)}</span></div>`).join('')}</div>` : ''}
     <h2 class="psec">Trends</h2>${['stress', 'maxStress', 'sleepStress', 'restMin'].map(x => trendCard(x, d)).join('')}`;
   openPage('Stress', html, pg => {
     wireTrends(pg, d, ['stress', 'maxStress', 'sleepStress', 'restMin']);
-    loadIntraday(d).then(v => { const c = pg.querySelector('#pstressday'); if (c && v && JSON.stringify(v) !== JSON.stringify(it)) c.innerHTML = stressDayChart(d, v); });
+    loadIntraday(d).then(v => { const c = pg.querySelector('#pstressday'); if (c && v && JSON.stringify(v) !== JSON.stringify(it)) { c.innerHTML = stressDayChart(d, v); pg.querySelector('#pstresscap').textContent = (v.stress || []).length ? 'Stress through the day' : 'Heart rate through the day: higher above your resting rate = more load (Garmin shares only daily stress totals)'; } });
   }, 'rgba(63,179,168,.2)');
 }
 
@@ -264,12 +278,15 @@ function energyChart(d, it) {
   const p = it.bb.filter(x => x[1] != null), X = m => m / 1440 * W, Y = v => Hh - v / 100 * (Hh - 16);
   const line = p.map((q, i) => `${i ? 'L' : 'M'}${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join('');
   const last = p[p.length - 1];
-  const sb = (it.stress || []).filter(q => q[1] >= 0).map(q => { const hh = q[1] / 100 * 34; return `<rect x="${X(q[0]).toFixed(1)}" y="${(Hh + 52 - hh).toFixed(1)}" width="1.6" height="${hh.toFixed(1)}" fill="${STRESS_COL(q[1])}" opacity=".85"/>`; }).join('');
+  let sb = (it.stress || []).filter(q => q[1] >= 0).map(q => { const hh = q[1] / 100 * 34; return `<rect x="${X(q[0]).toFixed(1)}" y="${(Hh + 52 - hh).toFixed(1)}" width="1.6" height="${hh.toFixed(1)}" fill="${STRESS_COL(q[1])}" opacity=".85"/>`; }).join('');
+  let sbl = 'Stress';
+  if (!sb && (it.hr || []).length) { const rhr = H(d, 'rhr') || 60; sbl = 'Heart rate';
+    sb = it.hr.map(q => { const e = Math.max(0, q[1] - rhr), hh = Math.min(34, e / 60 * 34); return hh < 1 ? '' : `<rect x="${X(q[0]).toFixed(1)}" y="${(Hh + 52 - hh).toFixed(1)}" width="1.4" height="${hh.toFixed(1)}" fill="${e < 15 ? '#4c9be8' : e < 30 ? '#c9c24a' : e < 50 ? '#e8963c' : '#e5484d'}" opacity=".85"/>`; }).join(''); }
   return `<svg viewBox="0 -18 ${W} ${Hh + 86}" class="pday"><defs><linearGradient id="ebg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2b51d" stop-opacity=".45"/><stop offset="1" stop-color="#5fc21a" stop-opacity=".05"/></linearGradient></defs>
     ${[25, 50, 75].map(v => `<line x1="0" x2="${W}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--line)" stroke-dasharray="2 4"/>`).join('')}
     <path d="${line}L${X(last[0]).toFixed(1)},${Hh}L${X(p[0][0]).toFixed(1)},${Hh}Z" fill="url(#ebg)"/><path d="${line}" fill="none" stroke="#f2b51d" stroke-width="2.2" stroke-linejoin="round"/>
     <circle cx="${X(last[0]).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" r="4.5" fill="#f2b51d" stroke="var(--card)" stroke-width="2"/>
-    ${actMarks(d, W, 6)}<text x="0" y="${Hh + 14}" font-size="10" fill="var(--muted)">Stress</text>${sb}${dayAxis(W).replace(/\{Y\}/g, Hh + 66)}</svg>`;
+    ${actMarks(d, W, 6)}<text x="0" y="${Hh + 14}" font-size="10" fill="var(--muted)">${sbl}</text>${sb}${dayAxis(W).replace(/\{Y\}/g, Hh + 66)}</svg>`;
 }
 function energyCoach(d, it) {
   const h = health[d] || {};

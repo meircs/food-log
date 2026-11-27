@@ -70,7 +70,7 @@ def fixtures():
         'food_idea': 'Greek yogurt', 'watch': '', 'full': '## Sat — Green\n## Today\n- Strength: 3 rounds\n- Bed by 12:00'}}
     extra['data/ai_history.json'] = json.dumps({'history': [morning]})
     for n in range(0, 4):
-        extra[f'data/intraday/{D(n)}.json'] = json.dumps({'date': D(n), 'stress': [[m, -2 if 1080 <= m < 1110 else (-1 if m < 420 and m % 30 == 0 else int(20 + 30 * abs(math.sin(m / 90))))] for m in range(0, 1290, 3)],
+        extra[f'data/intraday/{D(n)}.json'] = json.dumps({'date': D(n), 'hr': [[m, 120 + m % 30 if 1080 <= m < 1110 else int(58 + 25 * abs(math.sin(m / 90)) if m > 420 else 52)] for m in range(0, 1290, 2)],
                                                        'bb': [[m, max(5, min(100, 40 + m // 12 if m < 420 else 75 - (m - 420) // 18 - n * 3))] for m in range(0, 1290, 15)]})
     extra['data/bp.csv'] = '\n'.join(bp) + '\n'; extra['data/strength_sets.csv'] = '\n'.join(sets_csv) + '\n'
     return {**extra, 'data/food.csv': '\n'.join(food) + '\n', 'data/daily.csv': '\n'.join(daily) + '\n',
@@ -288,7 +288,7 @@ async def main():
         check('Sleep Bank' in await pg.inner_text('#pg'), 'Sleep page shows sleep bank')
         await pg.screenshot(path=f'{SHOTS}/pg-sleep.png', full_page=False); await pg.click('#pg .pgback'); await pg.wait_for_timeout(400)
         await pg.click('#hstress'); await pg.wait_for_timeout(900)
-        check(await pg.locator('#pg #pstressday svg rect').count() > 50, 'Stress page draws the day curve')
+        check(await pg.locator('#pg #pstressday svg line').count() > 50, 'Stress page draws the heart-rate day curve')
         check(await pg.locator('#pg .pbrk').count() == 4, 'Stress page shows High/Medium/Low/Rest')
         await pg.screenshot(path=f'{SHOTS}/pg-stress.png'); await pg.click('#pg .pgback'); await pg.wait_for_timeout(400)
         await pg.click('#hbb'); await pg.wait_for_timeout(1800)
